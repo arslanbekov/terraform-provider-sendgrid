@@ -29,6 +29,12 @@ func TestAccSendgridParseWebhookBasic(t *testing.T) {
 					resource.TestCheckResourceAttr("sendgrid_parse_webhook.test", "spam_check", "true"),
 				),
 			},
+			// Import test
+			{
+				ResourceName:      "sendgrid_parse_webhook.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
 }
@@ -78,6 +84,37 @@ func TestAccSendgridParseWebhookUpdate(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckSendgridParseWebhookExists("sendgrid_parse_webhook.test"),
 					resource.TestCheckResourceAttr("sendgrid_parse_webhook.test", "url", urlUpdated),
+				),
+			},
+		},
+	})
+}
+
+func TestAccSendgridParseWebhookUpdateInPlace(t *testing.T) {
+	hostname := "parse-inplace-" + acctest.RandString(10) + ".example.com"
+	url := "https://inplace-" + acctest.RandString(10) + ".com/parse"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckSendgridParseWebhookDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCheckSendgridParseWebhookConfigBasic(hostname, url),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckSendgridParseWebhookExists("sendgrid_parse_webhook.test"),
+					resource.TestCheckResourceAttr("sendgrid_parse_webhook.test", "spam_check", "true"),
+					resource.TestCheckResourceAttr("sendgrid_parse_webhook.test", "send_raw", "false"),
+				),
+			},
+			{
+				Config: testAccCheckSendgridParseWebhookConfigUpdatedFields(hostname, url),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckSendgridParseWebhookExists("sendgrid_parse_webhook.test"),
+					resource.TestCheckResourceAttr("sendgrid_parse_webhook.test", "hostname", hostname),
+					resource.TestCheckResourceAttr("sendgrid_parse_webhook.test", "url", url),
+					resource.TestCheckResourceAttr("sendgrid_parse_webhook.test", "spam_check", "false"),
+					resource.TestCheckResourceAttr("sendgrid_parse_webhook.test", "send_raw", "true"),
 				),
 			},
 		},
@@ -152,6 +189,17 @@ resource "sendgrid_parse_webhook" "test" {
 	url        = "%s"
 	spam_check = true
 	send_raw   = false
+}
+`, hostname, url)
+}
+
+func testAccCheckSendgridParseWebhookConfigUpdatedFields(hostname, url string) string {
+	return fmt.Sprintf(`
+resource "sendgrid_parse_webhook" "test" {
+	hostname   = "%s"
+	url        = "%s"
+	spam_check = false
+	send_raw   = true
 }
 `, hostname, url)
 }
