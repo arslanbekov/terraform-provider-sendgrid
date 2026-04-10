@@ -36,7 +36,7 @@ jobs:
           go test -v ./sendgrid/ -run '^TestProvider' -timeout=30s -coverprofile=coverage.txt -covermode=atomic
 
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: arslanbekov/terraform-provider-sendgrid
@@ -82,7 +82,7 @@ jobs:
 
       - name: Upload acceptance test coverage to Codecov
         if: env.SENDGRID_API_KEY != ''
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: arslanbekov/terraform-provider-sendgrid
