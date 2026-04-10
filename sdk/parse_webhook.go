@@ -84,10 +84,10 @@ func (c *Client) ReadParseWebhook(ctx context.Context, hostname string) (*ParseW
 		}
 	}
 
-	respBody, _, err := c.Get(ctx, "GET", "/user/webhooks/parse/settings/"+hostname)
+	respBody, statusCode, err := c.Get(ctx, "GET", "/user/webhooks/parse/settings/"+hostname)
 	if err != nil {
 		return nil, RequestError{
-			StatusCode: http.StatusInternalServerError,
+			StatusCode: statusCode,
 			Err:        err,
 		}
 	}
@@ -109,7 +109,7 @@ func (c *Client) UpdateParseWebhook(ctx context.Context, hostname string, spamCh
 	t.SendRaw = sendRaw
 	t.SecurityPolicy = securityPolicy
 
-	_, _, err := c.Post(ctx, "PUT", "/user/webhooks/parse/settings/"+hostname, t)
+	_, _, err := c.Post(ctx, "PATCH", "/user/webhooks/parse/settings/"+hostname, t)
 	if err != nil {
 		return RequestError{
 			StatusCode: http.StatusInternalServerError,
