@@ -168,6 +168,90 @@ resource "sendgrid_unsubscribe_group" "marketing" {
 }
 ```
 
+### sendgrid_webhook_security_policy
+
+Manages webhook security policies with OAuth and/or signature verification.
+
+**Example:**
+
+```hcl
+resource "sendgrid_webhook_security_policy" "example" {
+  name = "My Security Policy"
+
+  oauth {
+    token_url = "https://auth.example.com/token"
+    client_id = "my-client-id"
+    client_secret = "my-client-secret"
+  }
+}
+```
+
+### sendgrid_domain_authentication_validation
+
+Triggers domain authentication DNS validation.
+
+**Example:**
+
+```hcl
+resource "sendgrid_domain_authentication_validation" "example" {
+  domain_authentication_id = sendgrid_domain_authentication.example.id
+  sub_user_on_behalf_of    = "my-subuser"  # Optional
+}
+```
+
+**Arguments:**
+
+- `domain_authentication_id` (Required) - ID of the domain authentication to validate
+- `sub_user_on_behalf_of` (Optional) - Subuser username for on-behalf-of API calls
+
+**Attributes:**
+
+- `valid` - Whether the domain DNS is correctly configured
+
+### sendgrid_subuser
+
+Manages SendGrid subuser accounts.
+
+**Example:**
+
+```hcl
+resource "sendgrid_subuser" "example" {
+  username = "my-subuser"
+  email    = "subuser@example.com"
+  password = "SecureP@ssw0rd!"
+  ips      = ["192.168.1.1"]
+}
+```
+
+### sendgrid_sso_integration
+
+Manages SSO integrations.
+
+**Example:**
+
+```hcl
+resource "sendgrid_sso_integration" "example" {
+  name        = "My IdP"
+  enabled     = false
+  signin_url  = "https://idp.example.com/signin"
+  signout_url = "https://idp.example.com/signout"
+  entity_id   = "https://idp.example.com/entity"
+}
+```
+
+### sendgrid_sso_certificate
+
+Manages SSO certificates.
+
+**Example:**
+
+```hcl
+resource "sendgrid_sso_certificate" "example" {
+  public_certificate = file("cert.pem")
+  integration_id     = sendgrid_sso_integration.example.id
+}
+```
+
 ## Data Sources
 
 ### sendgrid_teammate

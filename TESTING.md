@@ -6,24 +6,26 @@ This document explains how to run different types of tests for the SendGrid Terr
 
 ### 1. Unit Tests
 
-These tests verify basic provider functionality without making API calls.
+Unit tests verify resource behavior using mock HTTP servers — no API key or network access needed.
 
 ```bash
-# Run unit tests only
-go test -v ./sendgrid/ -run '^TestProvider' -timeout=30s
+# Run all unit tests (SDK + resource layer)
+go test ./... -timeout=60s
 ```
 
 **What they test:**
 
-- Provider configuration
-- Resource schema validation
-- Basic functionality
+- Provider configuration and schema validation
+- Resource Read functions (success, 404 handling, error propagation)
+- Resource Update/Delete with mock HTTP verification (PATCH vs PUT, etc.)
+- SDK client functions (Create, Read, Update, Delete for all resources)
+- Error handling and status code propagation
 
-**GitHub Actions:** ✅ Always run on every PR and push
+**GitHub Actions:** Always run on every PR and push
 
 ### 2. Acceptance Tests
 
-These tests interact with the real SendGrid API and require API credentials.
+Acceptance tests interact with the real SendGrid API and require API credentials.
 
 ```bash
 # Set up environment
@@ -31,13 +33,10 @@ export SENDGRID_API_KEY="your-sendgrid-api-key"
 export TF_ACC=1
 
 # Run all acceptance tests
-go test -v ./sendgrid/ -run '^TestAcc' -timeout=30m
+go test -v ./sendgrid/ -run '^TestAcc' -timeout=30m -parallel=1
 
 # Run specific resource tests
 go test -v ./sendgrid/ -run 'TestAccSendgridTeammate' -timeout=30m
-
-# Run with limited parallelism to avoid rate limits
-go test -v ./sendgrid/ -run '^TestAcc' -timeout=30m -parallel=1
 ```
 
 **What they test:**
@@ -46,57 +45,71 @@ go test -v ./sendgrid/ -run '^TestAcc' -timeout=30m -parallel=1
 - Rate limiting behavior under load
 - Integration between multiple resources
 - Data source functionality
+- Import state round-trip
 
-**GitHub Actions:** ⚠️ Only run on master branch if `SENDGRID_API_KEY` secret is configured
+**GitHub Actions:** Only run on master branch if `SENDGRID_API_KEY` secret is configured
 
 ### 3. Test Compilation
 
 Verify that all tests compile correctly without running them.
 
 ```bash
-# Compile all tests
 go test -c ./sendgrid/ -o /dev/null
 ```
 
-**GitHub Actions:** ✅ Always run to ensure test quality
+**GitHub Actions:** Always run to ensure test quality
 
 ## Test Categories
 
-### Resource Tests (11/12 resources covered)
+### Resource Unit Tests (13/14 resources covered)
 
-- ✅ `sendgrid_api_key` - API key management
-- ✅ `sendgrid_domain_authentication` - Domain verification
-- ✅ `sendgrid_event_webhook` - Event webhooks
-- ✅ `sendgrid_link_branding` - Link branding
-- ✅ `sendgrid_parse_webhook` - Parse webhooks
-- ✅ `sendgrid_sso_certificate` - SSO certificates
-- ✅ `sendgrid_sso_integration` - SSO integrations
-- ✅ `sendgrid_subuser` - Subuser management
-- ✅ `sendgrid_teammate` - Teammate management
-- ✅ `sendgrid_template` - Email templates
-- ✅ `sendgrid_template_version` - Template versions
-- ✅ `sendgrid_unsubscribe_group` - Unsubscribe groups
+Every resource has mock-based unit tests covering Read success, 404 handling, and schema validation:
+
+- `sendgrid_api_key`
+- `sendgrid_domain_authentication`
+- `sendgrid_domain_authentication_validation`
+- `sendgrid_event_webhook` (acceptance tests only — uses list-based Read)
+- `sendgrid_link_branding`
+- `sendgrid_parse_webhook`
+- `sendgrid_sso_certificate`
+- `sendgrid_sso_integration`
+- `sendgrid_subuser`
+- `sendgrid_teammate`
+- `sendgrid_template`
+- `sendgrid_template_version`
+- `sendgrid_unsubscribe_group`
+- `sendgrid_webhook_security_policy`
+
+### SDK Unit Tests
+
+- `sdk/client_test.go` — Client creation, JSON body serialization
+- `sdk/domain_authentication_test.go` — Parse, Read, Validate functions
+- `sdk/parse_webhook_test.go` — Full CRUD with method verification
+- `sdk/errors_test.go` — Error parsing, enhancement, retry logic
+
+### Acceptance Tests (14 resources)
+
+All resources have acceptance tests covering Create, Read, Update, Delete, and Import operations.
 
 ### Data Source Tests (4/4 covered)
 
-- ✅ `sendgrid_template`
-- ✅ `sendgrid_template_version`
-- ✅ `sendgrid_teammate`
-- ✅ `sendgrid_unsubscribe_group`
+- `sendgrid_template`
+- `sendgrid_template_version`
+- `sendgrid_teammate`
+- `sendgrid_unsubscribe_group`
 
 ### Special Test Suites
 
-- ✅ **Rate Limiting Tests** - High-volume scenarios
-- ✅ **Integration Tests** - Multi-resource workflows
-- ✅ **Stress Tests** - Concurrent operations
+- **Rate Limiting Tests** — High-volume scenarios
+- **Integration Tests** — Multi-resource workflows
 
 ## Running Tests Locally
 
 ### Prerequisites
 
-1. **Go 1.21+** installed
-2. **SendGrid API Key** with appropriate permissions
-3. **Test SendGrid Account** (recommended to use a separate account)
+1. **Go 1.25+** installed
+2. **SendGrid API Key** with appropriate permissions (for acceptance tests only)
+3. **Test SendGrid Account** (recommended for acceptance tests)
 
 ### Basic Test Run
 
@@ -109,12 +122,25 @@ cd terraform-provider-sendgrid
 go mod download
 
 # 3. Run unit tests (no API key needed)
-go test -v ./sendgrid/ -run '^TestProvider' -timeout=30s
+go test ./... -timeout=60s
 
 # 4. Run acceptance tests (API key required)
 export SENDGRID_API_KEY="your-api-key"
 export TF_ACC=1
-go test -v ./sendgrid/ -timeout=30m -parallel=1
+go test -v ./sendgrid/ -run '^TestAcc' -timeout=30m -parallel=1
+```
+
+### Running Tests with Coverage
+
+```bash
+# Generate coverage report
+go test ./... -timeout=60s -coverprofile=coverage.txt -covermode=atomic
+
+# View coverage in browser
+go tool cover -html=coverage.txt
+
+# View per-function coverage
+go tool cover -func=coverage.txt | grep resource_sendgrid
 ```
 
 ### Rate Limiting Considerations
@@ -141,34 +167,116 @@ Then source it before running tests:
 
 ```bash
 source .env
-go test -v ./sendgrid/ -timeout=30m -parallel=1
+go test -v ./sendgrid/ -run '^TestAcc' -timeout=30m -parallel=1
 ```
 
 ## GitHub Actions Behavior
 
 ### On Pull Requests
 
-- ✅ Unit tests run
-- ✅ Test compilation verification
-- ✅ Coverage report generated
-- ❌ Acceptance tests skipped (no API access)
+- Unit tests run (SDK + resource layer)
+- Test compilation verification
+- Coverage report generated and uploaded to Codecov
+- Acceptance tests skipped (no API access)
 
 ### On Master Branch
 
-- ✅ Unit tests run
-- ✅ Test compilation verification
-- ✅ Acceptance tests run (if API key configured)
-- ✅ Full coverage validation
+- Unit tests run
+- Test compilation verification
+- Acceptance tests run (if `SENDGRID_API_KEY` secret is configured)
+- Full coverage validation
 
-## Test Coverage Metrics
+## Writing Tests
 
-Current coverage: **~95%**
+### Unit Tests (Mock HTTP Server)
 
-- **Unit Tests:** 2/2 (100%)
-- **Resource Tests:** 11/12 (92%)
-- **Data Source Tests:** 4/4 (100%)
-- **Integration Tests:** 3/3 (100%)
-- **Rate Limiting Tests:** 3/3 (100%)
+All resource unit tests follow this pattern:
+
+```go
+package sendgrid
+
+import (
+    "context"
+    "net/http"
+    "net/http/httptest"
+    "testing"
+)
+
+func TestMyResourceRead_Success(t *testing.T) {
+    mux := http.NewServeMux()
+    mux.HandleFunc("/api/endpoint/123", func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Content-Type", "application/json")
+        w.WriteHeader(http.StatusOK)
+        _, _ = w.Write([]byte(`{"id":"123","name":"test"}`))
+    })
+
+    server := httptest.NewServer(mux)
+    defer server.Close()
+    config := &Config{APIKey: "test-key", Host: server.URL}
+
+    r := resourceSendgridMyResource()
+    d := r.TestResourceData()
+    d.SetId("123")
+
+    diags := resourceSendgridMyResourceRead(context.Background(), d, config)
+
+    if diags.HasError() {
+        t.Fatalf("Read() returned unexpected error: %v", diags)
+    }
+    if d.Get("name") != "test" {
+        t.Errorf("Read() name = %v, want %q", d.Get("name"), "test")
+    }
+}
+
+func TestMyResourceRead_NotFound(t *testing.T) {
+    mux := http.NewServeMux()
+    mux.HandleFunc("/api/endpoint/999", func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusNotFound)
+        _, _ = w.Write([]byte(`{"errors":[{"message":"not found"}]}`))
+    })
+
+    server := httptest.NewServer(mux)
+    defer server.Close()
+    config := &Config{APIKey: "test-key", Host: server.URL}
+
+    r := resourceSendgridMyResource()
+    d := r.TestResourceData()
+    d.SetId("999")
+
+    diags := resourceSendgridMyResourceRead(context.Background(), d, config)
+
+    if diags.HasError() {
+        t.Fatalf("Read() should not error on 404")
+    }
+    if d.Id() != "" {
+        t.Errorf("Read() should clear ID on 404, got: %s", d.Id())
+    }
+}
+```
+
+### Acceptance Tests
+
+Follow the standard terraform-plugin-sdk v2 test pattern:
+
+```go
+package sendgrid_test
+
+func TestAccSendgridMyResource_basic(t *testing.T) {
+    resource.Test(t, resource.TestCase{
+        PreCheck:     func() { testAccPreCheck(t) },
+        Providers:    testAccProviders,
+        CheckDestroy: testAccCheckMyResourceDestroy,
+        Steps: []resource.TestStep{
+            {
+                Config: testAccMyResourceConfig(),
+                Check: resource.ComposeTestCheckFunc(
+                    testAccCheckMyResourceExists("sendgrid_my_resource.test"),
+                ),
+            },
+        },
+    })
+}
+```
 
 ## Troubleshooting
 

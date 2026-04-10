@@ -61,7 +61,7 @@ We actively welcome your pull requests:
 
 ### Prerequisites
 
-- [Go](https://golang.org/doc/install) 1.24+ (see [go.mod](go.mod))
+- [Go](https://golang.org/doc/install) 1.25+ (see [go.mod](go.mod))
 - [Terraform](https://www.terraform.io/downloads.html) 1.0+
 - [Make](https://www.gnu.org/software/make/) (for using the Makefile)
 - SendGrid API key with appropriate permissions for testing
