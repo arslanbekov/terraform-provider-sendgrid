@@ -78,10 +78,10 @@ func (c *Client) ReadAPIKey(ctx context.Context, id string) (*APIKey, RequestErr
 		}
 	}
 
-	respBody, _, err := c.Get(ctx, "GET", "/api_keys/"+id)
+	respBody, statusCode, err := c.Get(ctx, "GET", "/api_keys/"+id)
 	if err != nil {
 		return nil, RequestError{
-			StatusCode: http.StatusInternalServerError,
+			StatusCode: statusCode,
 			Err:        err,
 		}
 	}
@@ -90,10 +90,10 @@ func (c *Client) ReadAPIKey(ctx context.Context, id string) (*APIKey, RequestErr
 }
 
 func (c *Client) ReadAPIKeys(ctx context.Context) ([]APIKey, RequestError) {
-	respBody, _, err := c.Get(ctx, "GET", "/api_keys")
+	respBody, statusCode, err := c.Get(ctx, "GET", "/api_keys")
 	if err != nil {
 		return nil, RequestError{
-			StatusCode: http.StatusInternalServerError,
+			StatusCode: statusCode,
 			Err:        err,
 		}
 	}

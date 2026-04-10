@@ -65,10 +65,10 @@ func (c Client) ReadSSOCertificate(ctx context.Context, id string) (*SSOCertific
 		}
 	}
 
-	respBody, _, err := c.Get(ctx, "GET", fmt.Sprintf("/sso/certificates/%s", id))
+	respBody, statusCode, err := c.Get(ctx, "GET", fmt.Sprintf("/sso/certificates/%s", id))
 	if err != nil {
 		return nil, RequestError{
-			StatusCode: http.StatusInternalServerError,
+			StatusCode: statusCode,
 			Err:        err,
 		}
 	}

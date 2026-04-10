@@ -86,6 +86,7 @@ tofu init && tofu apply
 - **SSO**: `sendgrid_sso_integration`, `sendgrid_sso_certificate` - Single Sign-On setup
 - **Subusers**: `sendgrid_subuser` - Subuser account management
 - **Unsubscribe Groups**: `sendgrid_unsubscribe_group` - Manage unsubscribe groups
+- **Domain Validation**: `sendgrid_domain_authentication_validation` - Domain DNS validation
 
 See [full documentation](docs/RESOURCES.md) for details.
 
@@ -101,7 +102,7 @@ See [full documentation](docs/RESOURCES.md) for details.
 
 ### Requirements
 
-- [Go](https://golang.org/doc/install) 1.24+ (see [.github/workflows/test.yml](.github/workflows/test.yml))
+- [Go](https://golang.org/doc/install) 1.25+ (see [go.mod](go.mod))
 - [Terraform](https://www.terraform.io/downloads.html) 1.0+
 - SendGrid API key with appropriate permissions
 
@@ -113,17 +114,19 @@ go build -o terraform-provider-sendgrid
 
 ### Testing
 
-The provider includes both unit tests and acceptance tests:
+The provider includes unit tests (with mock HTTP servers) and acceptance tests (against real SendGrid API):
 
 ```bash
-# Run unit tests
-make test
+# Run all unit tests (no API key needed)
+go test ./... -timeout=60s
 
 # Run acceptance tests (requires SENDGRID_API_KEY)
-make testacc
+export SENDGRID_API_KEY="your-key"
+export TF_ACC=1
+go test -v ./sendgrid/ -run '^TestAcc' -timeout=30m -parallel=1
 ```
 
-**Note**: Test coverage is primarily achieved through acceptance tests against the real SendGrid API. Current coverage: ~44% (standard for Terraform providers with external API dependencies).
+All resources have unit tests with mock HTTP servers covering Read (success, 404, error), schema validation, and key CRUD operations. Acceptance tests run against the real API on the master branch.
 
 See [TESTING.md](TESTING.md) for detailed testing instructions.
 

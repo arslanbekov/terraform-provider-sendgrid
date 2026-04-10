@@ -136,10 +136,10 @@ func (c *Client) ReadWebhookSecurityPolicy(ctx context.Context, policyId string)
 		}
 	}
 
-	respBody, _, err := c.Get(ctx, "GET", "/user/webhooks/security/policies/"+policyId)
+	respBody, statusCode, err := c.Get(ctx, "GET", "/user/webhooks/security/policies/"+policyId)
 	if err != nil {
 		return nil, RequestError{
-			StatusCode: http.StatusInternalServerError,
+			StatusCode: statusCode,
 			Err:        err,
 		}
 	}

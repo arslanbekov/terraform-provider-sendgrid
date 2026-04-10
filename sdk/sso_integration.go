@@ -69,10 +69,10 @@ func (c Client) ReadSSOIntegration(ctx context.Context, id string) (*SSOIntegrat
 		}
 	}
 
-	respBody, _, err := c.Get(ctx, "GET", fmt.Sprintf("/sso/integrations/%s", id))
+	respBody, statusCode, err := c.Get(ctx, "GET", fmt.Sprintf("/sso/integrations/%s", id))
 	if err != nil {
 		return nil, RequestError{
-			StatusCode: http.StatusInternalServerError,
+			StatusCode: statusCode,
 			Err:        err,
 		}
 	}

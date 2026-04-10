@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
+	provider "github.com/arslanbekov/terraform-provider-sendgrid/sendgrid"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
@@ -73,7 +73,8 @@ func TestAccSendgridDomainAuthenticationWithRateLimiting(t *testing.T) {
 }
 
 func testAccCheckSendgridDomainAuthenticationDestroy(s *terraform.State) error {
-	c := testAccProvider.Meta().(*sendgrid.Client)
+	config := testAccProvider.Meta().(*provider.Config)
+	c := config.NewClient("")
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "sendgrid_domain_authentication" {
@@ -141,7 +142,8 @@ func testAccCheckSendgridDomainAuthenticationExists(n string) resource.TestCheck
 			return fmt.Errorf("No domain authentication ID set")
 		}
 
-		c := testAccProvider.Meta().(*sendgrid.Client)
+		config := testAccProvider.Meta().(*provider.Config)
+	c := config.NewClient("")
 		ctx := context.Background()
 
 		_, err := c.ReadDomainAuthentication(ctx, rs.Primary.ID)

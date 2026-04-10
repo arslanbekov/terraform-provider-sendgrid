@@ -19,6 +19,7 @@ package sendgrid
 
 import (
 	"context"
+	"net/http"
 
 	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -85,14 +86,15 @@ func resourceSendgridTemplateRead(ctx context.Context, d *schema.ResourceData, m
 	config := m.(*Config)
 	c := config.NewClient("")
 
-	templateStruct, err := sendgrid.RetryOnRateLimit(ctx, d, func() (interface{}, sendgrid.RequestError) {
-		return c.ReadTemplate(ctx, d.Id())
-	})
-	if err != nil {
-		return diag.FromErr(err)
+	template, readErr := c.ReadTemplate(ctx, d.Id())
+	if readErr.Err != nil {
+		if readErr.StatusCode == http.StatusNotFound {
+			d.SetId("")
+			return nil
+		}
+		return diag.FromErr(readErr.Err)
 	}
 
-	template := templateStruct.(*sendgrid.Template)
 	if err := sendgridTemplateParse(template, d); err != nil {
 		return diag.FromErr(err)
 	}

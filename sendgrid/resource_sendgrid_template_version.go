@@ -28,6 +28,7 @@ package sendgrid
 
 import (
 	"context"
+	"net/http"
 	"reflect"
 	"strings"
 
@@ -152,14 +153,15 @@ func resourceSendgridTemplateVersionRead(ctx context.Context, d *schema.Resource
 	config := m.(*Config)
 	c := config.NewClient("")
 
-	templateVersionStruct, err := sendgrid.RetryOnRateLimit(ctx, d, func() (interface{}, sendgrid.RequestError) {
-		return c.ReadTemplateVersion(ctx, d.Get("template_id").(string), d.Id())
-	})
-	if err != nil {
-		return diag.FromErr(err)
+	templateVersion, readErr := c.ReadTemplateVersion(ctx, d.Get("template_id").(string), d.Id())
+	if readErr.Err != nil {
+		if readErr.StatusCode == http.StatusNotFound {
+			d.SetId("")
+			return nil
+		}
+		return diag.FromErr(readErr.Err)
 	}
 
-	templateVersion := templateVersionStruct.(*sendgrid.TemplateVersion)
 	if er := parseTemplateVersion(d, templateVersion); er != nil {
 		return diag.FromErr(er)
 	}

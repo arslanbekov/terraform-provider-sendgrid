@@ -22,6 +22,7 @@ package sendgrid
 
 import (
 	"context"
+	"net/http"
 	"reflect"
 
 	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
@@ -121,6 +122,11 @@ func resourceSendgridAPIKeyRead(ctx context.Context, d *schema.ResourceData, m i
 
 	apiKey, err := c.ReadAPIKey(ctx, d.Id())
 	if err.Err != nil {
+		if err.StatusCode == http.StatusNotFound {
+			d.SetId("")
+			return nil
+		}
+
 		return diag.FromErr(err.Err)
 	}
 

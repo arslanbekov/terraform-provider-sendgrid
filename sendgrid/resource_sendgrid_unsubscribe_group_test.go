@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
+	provider "github.com/arslanbekov/terraform-provider-sendgrid/sendgrid"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
@@ -86,7 +86,8 @@ func TestAccSendgridUnsubscribeGroupWithRateLimiting(t *testing.T) {
 }
 
 func testAccCheckSendgridUnsubscribeGroupDestroy(s *terraform.State) error {
-	c := testAccProvider.Meta().(*sendgrid.Client)
+	config := testAccProvider.Meta().(*provider.Config)
+	c := config.NewClient("")
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "sendgrid_unsubscribe_group" {
@@ -143,7 +144,8 @@ func testAccCheckSendgridUnsubscribeGroupExists(n string) resource.TestCheckFunc
 			return fmt.Errorf("No unsubscribe group ID set")
 		}
 
-		c := testAccProvider.Meta().(*sendgrid.Client)
+		config := testAccProvider.Meta().(*provider.Config)
+	c := config.NewClient("")
 		ctx := context.Background()
 
 		_, err := c.ReadUnsubscribeGroup(ctx, rs.Primary.ID)

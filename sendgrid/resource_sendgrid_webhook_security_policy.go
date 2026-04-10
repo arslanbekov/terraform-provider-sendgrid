@@ -2,6 +2,7 @@ package sendgrid
 
 import (
 	"context"
+	"net/http"
 
 	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -128,6 +129,10 @@ func resourceSendgridWebhookSecurityPolicyRead(ctx context.Context, d *schema.Re
 
 	webhook, err := c.ReadWebhookSecurityPolicy(ctx, d.Id())
 	if err.Err != nil {
+		if err.StatusCode == http.StatusNotFound {
+			d.SetId("")
+			return nil
+		}
 		return diag.FromErr(err.Err)
 	}
 
