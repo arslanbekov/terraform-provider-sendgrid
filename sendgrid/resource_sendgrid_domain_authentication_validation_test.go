@@ -28,6 +28,13 @@ func TestAccSendgridDomainAuthenticationValidationBasic(t *testing.T) {
 					resource.TestCheckResourceAttr("sendgrid_domain_authentication.test", "automatic_security", "false"),
 				),
 			},
+			// Import test
+			{
+				ResourceName:            "sendgrid_domain_authentication_validation.this",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"sub_user_on_behalf_of"},
+			},
 		},
 	})
 }

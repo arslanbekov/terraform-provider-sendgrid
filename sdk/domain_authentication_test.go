@@ -127,6 +127,59 @@ func setup() func() {
 		server.Close()
 	}
 }
+func TestClient_ReadDomainAuthentication_Success(t *testing.T) {
+	teardown := setup()
+	defer teardown()
+	mux.HandleFunc("/whitelabel/domains/123", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":123,"domain":"example.com","valid":true}`))
+	})
+	client := sendgrid.NewClient("api-key", server.URL, "")
+
+	auth, reqErr := client.ReadDomainAuthentication(context.Background(), "123")
+
+	if reqErr.Err != nil {
+		t.Fatalf("ReadDomainAuthentication() unexpected error: %v", reqErr.Err)
+	}
+	if auth.ID != 123 {
+		t.Errorf("ReadDomainAuthentication() ID = %d, want 123", auth.ID)
+	}
+	if !auth.Valid {
+		t.Error("ReadDomainAuthentication() Valid = false, want true")
+	}
+}
+
+func TestClient_ReadDomainAuthentication_NotFound(t *testing.T) {
+	teardown := setup()
+	defer teardown()
+	mux.HandleFunc("/whitelabel/domains/999", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"errors":[{"message":"not found"}]}`))
+	})
+	client := sendgrid.NewClient("api-key", server.URL, "")
+
+	_, reqErr := client.ReadDomainAuthentication(context.Background(), "999")
+
+	if reqErr.Err == nil {
+		t.Fatal("ReadDomainAuthentication() expected error for 404, got nil")
+	}
+	if reqErr.StatusCode != http.StatusNotFound {
+		t.Errorf("ReadDomainAuthentication() StatusCode = %d, want %d", reqErr.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestClient_ReadDomainAuthentication_EmptyID(t *testing.T) {
+	client := sendgrid.NewClient("api-key", "http://localhost", "")
+
+	_, reqErr := client.ReadDomainAuthentication(context.Background(), "")
+
+	if reqErr.Err == nil {
+		t.Fatal("ReadDomainAuthentication() expected error for empty ID, got nil")
+	}
+}
+
 func TestClient_ValidateDomainAuthentication_ShouldNotErrorForOkResponseCode(t *testing.T) {
 	teardown := setup()
 	defer teardown()
@@ -158,6 +211,37 @@ func TestClient_ValidateDomainAuthentication_ShouldErrorForErrorResponseCode(t *
 
 	if requestError.Err == nil {
 		t.Errorf("ValidateDomainAuthentication() got = %v, want %v", requestError, "error")
+	}
+}
+
+func TestClient_ValidateDomainAuthentication_ShouldErrorForNon200WithoutHTTPError(t *testing.T) {
+	teardown := setup()
+	defer teardown()
+	mux.HandleFunc("/whitelabel/domains/123/validate", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// 201 Created is not expected for validation — should be treated as error
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{}`))
+	})
+	client := sendgrid.NewClient("api-key", server.URL, "on-behalf")
+
+	requestError := client.ValidateDomainAuthentication(context.TODO(), "123")
+
+	if requestError.Err == nil {
+		t.Error("ValidateDomainAuthentication() expected error for non-200 status, got nil")
+	}
+	if requestError.StatusCode != http.StatusCreated {
+		t.Errorf("ValidateDomainAuthentication() StatusCode = %d, want %d", requestError.StatusCode, http.StatusCreated)
+	}
+}
+
+func TestClient_ValidateDomainAuthentication_EmptyID(t *testing.T) {
+	client := sendgrid.NewClient("api-key", "http://localhost", "")
+
+	requestError := client.ValidateDomainAuthentication(context.Background(), "")
+
+	if requestError.Err == nil {
+		t.Fatal("ValidateDomainAuthentication() expected error for empty ID, got nil")
 	}
 }
 
