@@ -154,7 +154,7 @@ func (c *Client) ValidateDomainAuthentication(ctx context.Context, id string) Re
 		}
 	}
 
-	respBody, statusCode, err := c.Post(ctx, "POST", "/whitelabel/domains/"+id+"/validate", nil)
+	respBody, statusCode, err := c.Post(ctx, "POST", "/whitelabel/domains/"+id+"/validate", map[string]interface{}{})
 	if err != nil || statusCode != 200 {
 		return RequestError{
 			StatusCode: statusCode,
@@ -173,7 +173,7 @@ func (c *Client) ValidateDomainAuthentication(ctx context.Context, id string) Re
 	if valid, ok := res["valid"].(bool); ok && !valid {
 		return RequestError{
 			StatusCode: http.StatusInternalServerError,
-			Err:        ErrDomainAuthenticationValidationFailed,
+			Err:        fmt.Errorf("%w: %s", ErrDomainAuthenticationValidationFailed, respBody),
 		}
 	}
 

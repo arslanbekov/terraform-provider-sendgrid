@@ -13,7 +13,7 @@ package sendgrid
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -37,6 +37,12 @@ func resourceSendgridDomainAuthenticationValidation() *schema.Resource { //nolin
 				Required:    true,
 				ForceNew:    true,
 			},
+			"sub_user_on_behalf_of": {
+				Type:        schema.TypeString,
+				Description: "The subuser username for on-behalf-of API calls.",
+				Optional:    true,
+				ForceNew:    true,
+			},
 
 			"valid": {
 				Type:        schema.TypeBool,
@@ -56,18 +62,28 @@ func resourceSendgridDomainAuthenticationValidationCreate(
 }
 
 func validateDomain(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	c := m.(*sendgrid.Client)
+	config := m.(*Config)
+	c := config.NewClient("")
 
-	if err := c.ValidateDomainAuthentication(ctx, d.Get("domain_authentication_id").(string)); err.Err != nil || err.StatusCode != 200 {
-		if err.Err != nil {
-			return diag.FromErr(err.Err)
-		}
-		return diag.Errorf("unable to validate domain DNS configuration")
+	onBehalfOf := d.Get("sub_user_on_behalf_of").(string)
+	if onBehalfOf != "" {
+		c.OnBehalfOf = onBehalfOf
 	}
 
-	d.SetId(d.Get("domain_authentication_id").(string))
+	domainID := d.Get("domain_authentication_id").(string)
 
-	return resourceSendgridDomainAuthenticationValidationRead(ctx, d, m)
+	validateErr := c.ValidateDomainAuthentication(ctx, domainID)
+	if validateErr.Err != nil {
+		return diag.FromErr(validateErr.Err)
+	}
+
+	if err := d.Set("valid", true); err != nil {
+		return diag.FromErr(err)
+	}
+
+	d.SetId(domainID)
+
+	return nil
 }
 
 func resourceSendgridDomainAuthenticationValidationRead( //nolint:funlen,cyclop
@@ -75,18 +91,33 @@ func resourceSendgridDomainAuthenticationValidationRead( //nolint:funlen,cyclop
 	d *schema.ResourceData,
 	m interface{},
 ) diag.Diagnostics {
-	c := m.(*sendgrid.Client)
+	config := m.(*Config)
+	c := config.NewClient("")
 
-	auth, err := c.ReadDomainAuthentication(ctx, d.Get("domain_authentication_id").(string))
-	if err.Err != nil {
+	onBehalfOf := d.Get("sub_user_on_behalf_of").(string)
+	if onBehalfOf != "" {
+		c.OnBehalfOf = onBehalfOf
+	}
+
+	domainID := d.Get("domain_authentication_id").(string)
+	if d.Id() != "" {
+		domainID = d.Id()
+	}
+
+	if _, err := c.ReadDomainAuthentication(ctx, domainID); err.Err != nil {
 		return diag.FromErr(err.Err)
 	}
 
-	if err := d.Set("valid", auth.Valid); err != nil {
+	validateErr := c.ValidateDomainAuthentication(ctx, domainID)
+	if validateErr.Err != nil && !errors.Is(validateErr.Err, sendgrid.ErrDomainAuthenticationValidationFailed) {
+		return diag.FromErr(validateErr.Err)
+	}
+
+	if err := d.Set("valid", validateErr.Err == nil); err != nil {
 		return diag.FromErr(err)
 	}
 
-	d.SetId(fmt.Sprint(auth.ID))
+	d.SetId(domainID)
 	return nil
 }
 
