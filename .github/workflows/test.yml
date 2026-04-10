@@ -21,7 +21,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: 1.24
+          go-version: "1.25"
 
       - name: Get dependencies
         run: |
@@ -36,7 +36,7 @@ jobs:
           go test -v ./sendgrid/ -run '^TestProvider' -timeout=30s -coverprofile=coverage.txt -covermode=atomic
 
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: arslanbekov/terraform-provider-sendgrid
@@ -63,7 +63,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: 1.24
+          go-version: "1.25"
 
       - name: Get dependencies
         run: |
@@ -82,7 +82,7 @@ jobs:
 
       - name: Upload acceptance test coverage to Codecov
         if: env.SENDGRID_API_KEY != ''
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: arslanbekov/terraform-provider-sendgrid
