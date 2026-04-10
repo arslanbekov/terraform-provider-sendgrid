@@ -14,7 +14,7 @@ func setupMockServer(handler http.Handler) (*httptest.Server, *Config) {
 	server := httptest.NewServer(handler)
 	config := &Config{
 		APIKey: "test-api-key",
-		Host:   server.URL + "/",
+		Host:   server.URL,
 	}
 
 	return server, config
