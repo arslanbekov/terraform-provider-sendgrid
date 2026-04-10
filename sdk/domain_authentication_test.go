@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
@@ -176,8 +177,11 @@ func TestClient_ValidateDomainAuthentication_ShouldErrorForResponseBodySayingVal
 		t.Errorf("ValidateDomainAuthentication() got = %v, want %v", requestError, "error")
 	}
 	errMsg := sendgrid.ErrDomainAuthenticationValidationFailed.Error()
-	if requestError.Err.Error() != errMsg {
-		t.Errorf("ValidateDomainAuthentication() got = %v, want %v", requestError.Err.Error(),
+	if !errors.Is(requestError.Err, sendgrid.ErrDomainAuthenticationValidationFailed) {
+		t.Errorf("ValidateDomainAuthentication() got = %v, want wrapped validation failed error", requestError.Err)
+	}
+	if !strings.Contains(requestError.Err.Error(), errMsg) {
+		t.Errorf("ValidateDomainAuthentication() got = %v, want message containing %v", requestError.Err.Error(),
 			errMsg)
 	}
 }
