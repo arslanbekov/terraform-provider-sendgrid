@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"testing"
 
-	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
+	provider "github.com/arslanbekov/terraform-provider-sendgrid/sendgrid"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
@@ -138,7 +138,8 @@ func TestAccSendgridTeammatePendingUser(t *testing.T) {
 }
 
 func testAccCheckSendgridTeammateDestroy(s *terraform.State) error {
-	c := testAccProvider.Meta().(*sendgrid.Client)
+	config := testAccProvider.Meta().(*provider.Config)
+	c := config.NewClient("")
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "sendgrid_teammate" {
@@ -169,7 +170,8 @@ func testAccCheckSendgridTeammateExists(n string) resource.TestCheckFunc {
 			return fmt.Errorf("No teammate email set")
 		}
 
-		c := testAccProvider.Meta().(*sendgrid.Client)
+		config := testAccProvider.Meta().(*provider.Config)
+	c := config.NewClient("")
 		ctx := context.Background()
 
 		_, err := c.ReadUser(ctx, rs.Primary.ID)

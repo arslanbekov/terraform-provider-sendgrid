@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
+	provider "github.com/arslanbekov/terraform-provider-sendgrid/sendgrid"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
@@ -100,7 +100,8 @@ func TestAccSendgridLinkBrandingWithRateLimiting(t *testing.T) {
 }
 
 func testAccCheckSendgridLinkBrandingDestroy(s *terraform.State) error {
-	c := testAccProvider.Meta().(*sendgrid.Client)
+	config := testAccProvider.Meta().(*provider.Config)
+	c := config.NewClient("")
 
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type != "sendgrid_link_branding" {
@@ -165,7 +166,8 @@ func testAccCheckSendgridLinkBrandingExists(n string) resource.TestCheckFunc {
 			return fmt.Errorf("No link branding ID set")
 		}
 
-		c := testAccProvider.Meta().(*sendgrid.Client)
+		config := testAccProvider.Meta().(*provider.Config)
+	c := config.NewClient("")
 		ctx := context.Background()
 
 		_, err := c.ReadLinkBranding(ctx, rs.Primary.ID)
