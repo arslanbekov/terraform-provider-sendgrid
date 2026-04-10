@@ -39,6 +39,7 @@ output "api_key" {
 ### Optional
 
 - `scopes` (Set of String) The individual permissions that you are giving to this API Key.
+- `sub_user_on_behalf_of` (String) The subuser's username. The API call is made on behalf of the subuser account.
 
 ### Read-Only
 
