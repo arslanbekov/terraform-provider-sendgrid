@@ -1,5 +1,5 @@
 ---
-page_title: "sendgrid_webhook_security_policy Resource - terraform-provider-sendgrid"
+page_title: "sendgrid_webhook_security_policy Resource - sendgrid"
 subcategory: ""
 description: |-
   Manages a SendGrid webhook security policy. Security policies provide authentication mechanisms for webhooks, including OAuth and signature verification.
@@ -127,4 +127,3 @@ Import is supported using the following syntax:
 # Import existing webhook security policy by ID
 terraform import sendgrid_webhook_security_policy.example policy_id_here
 ```
-
