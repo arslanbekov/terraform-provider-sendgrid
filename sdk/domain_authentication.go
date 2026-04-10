@@ -106,10 +106,10 @@ func (c *Client) ReadDomainAuthentication(ctx context.Context, id string) (*Doma
 		}
 	}
 
-	respBody, _, err := c.Get(ctx, "GET", "/whitelabel/domains/"+id)
+	respBody, statusCode, err := c.Get(ctx, "GET", "/whitelabel/domains/"+id)
 	if err != nil {
 		return nil, RequestError{
-			StatusCode: http.StatusInternalServerError,
+			StatusCode: statusCode,
 			Err:        err,
 		}
 	}
@@ -155,10 +155,17 @@ func (c *Client) ValidateDomainAuthentication(ctx context.Context, id string) Re
 	}
 
 	respBody, statusCode, err := c.Post(ctx, "POST", "/whitelabel/domains/"+id+"/validate", map[string]interface{}{})
-	if err != nil || statusCode != 200 {
+	if err != nil {
 		return RequestError{
 			StatusCode: statusCode,
 			Err:        err,
+		}
+	}
+
+	if statusCode != http.StatusOK {
+		return RequestError{
+			StatusCode: statusCode,
+			Err:        fmt.Errorf("unexpected status code %d: %s", statusCode, respBody),
 		}
 	}
 

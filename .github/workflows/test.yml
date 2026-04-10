@@ -32,8 +32,8 @@ jobs:
 
       - name: Run Unit Tests with Coverage
         run: |
-          # Run only non-acceptance tests (TestProvider and TestProvider_impl) with coverage
-          go test -v ./sendgrid/ -run '^TestProvider' -timeout=30s -coverprofile=coverage.txt -covermode=atomic
+          # Run all unit tests across both packages (acceptance tests auto-skip without TF_ACC)
+          go test -v ./... -timeout=60s -coverprofile=coverage.txt -covermode=atomic
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v6

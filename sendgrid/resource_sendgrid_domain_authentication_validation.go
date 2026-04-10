@@ -13,9 +13,9 @@ package sendgrid
 
 import (
 	"context"
-	"errors"
+	"fmt"
+	"net/http"
 
-	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
@@ -77,16 +77,12 @@ func validateDomain(ctx context.Context, d *schema.ResourceData, m interface{}) 
 		return diag.FromErr(validateErr.Err)
 	}
 
-	if err := d.Set("valid", true); err != nil {
-		return diag.FromErr(err)
-	}
-
 	d.SetId(domainID)
 
-	return nil
+	return resourceSendgridDomainAuthenticationValidationRead(ctx, d, m)
 }
 
-func resourceSendgridDomainAuthenticationValidationRead( //nolint:funlen,cyclop
+func resourceSendgridDomainAuthenticationValidationRead(
 	ctx context.Context,
 	d *schema.ResourceData,
 	m interface{},
@@ -99,25 +95,23 @@ func resourceSendgridDomainAuthenticationValidationRead( //nolint:funlen,cyclop
 		c.OnBehalfOf = onBehalfOf
 	}
 
-	domainID := d.Get("domain_authentication_id").(string)
-	if d.Id() != "" {
-		domainID = d.Id()
-	}
+	domainID := d.Id()
 
-	if _, err := c.ReadDomainAuthentication(ctx, domainID); err.Err != nil {
+	auth, err := c.ReadDomainAuthentication(ctx, domainID)
+	if err.Err != nil {
+		if err.StatusCode == http.StatusNotFound {
+			d.SetId("")
+			return nil
+		}
+
 		return diag.FromErr(err.Err)
 	}
 
-	validateErr := c.ValidateDomainAuthentication(ctx, domainID)
-	if validateErr.Err != nil && !errors.Is(validateErr.Err, sendgrid.ErrDomainAuthenticationValidationFailed) {
-		return diag.FromErr(validateErr.Err)
-	}
+	//nolint:errcheck
+	d.Set("domain_authentication_id", fmt.Sprint(auth.ID))
+	//nolint:errcheck
+	d.Set("valid", auth.Valid)
 
-	if err := d.Set("valid", validateErr.Err == nil); err != nil {
-		return diag.FromErr(err)
-	}
-
-	d.SetId(domainID)
 	return nil
 }
 
