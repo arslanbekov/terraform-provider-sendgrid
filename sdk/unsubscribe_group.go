@@ -85,10 +85,10 @@ func (c *Client) ReadUnsubscribeGroup(ctx context.Context, id string) (*Unsubscr
 		}
 	}
 
-	respBody, _, err := c.Get(ctx, "GET", "/asm/groups/"+id)
+	respBody, statusCode, err := c.Get(ctx, "GET", "/asm/groups/"+id)
 	if err != nil {
 		return nil, RequestError{
-			StatusCode: http.StatusInternalServerError,
+			StatusCode: statusCode,
 			Err:        err,
 		}
 	}
@@ -98,10 +98,10 @@ func (c *Client) ReadUnsubscribeGroup(ctx context.Context, id string) (*Unsubscr
 
 // ReadUnsubscribeGroups retrieves all UnsubscribeGroup and returns them.
 func (c *Client) ReadUnsubscribeGroups(ctx context.Context) ([]UnsubscribeGroup, RequestError) {
-	respBody, _, err := c.Get(ctx, "GET", "/asm/groups")
+	respBody, statusCode, err := c.Get(ctx, "GET", "/asm/groups")
 	if err != nil {
 		return nil, RequestError{
-			StatusCode: http.StatusInternalServerError,
+			StatusCode: statusCode,
 			Err:        err,
 		}
 	}

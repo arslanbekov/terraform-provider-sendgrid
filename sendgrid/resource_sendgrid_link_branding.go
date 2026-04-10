@@ -20,6 +20,7 @@ package sendgrid
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -129,6 +130,10 @@ func resourceSendgridLinkBrandingRead(ctx context.Context, d *schema.ResourceDat
 
 	link, err := c.ReadLinkBranding(ctx, d.Id())
 	if err.Err != nil {
+		if err.StatusCode == http.StatusNotFound {
+			d.SetId("")
+			return nil
+		}
 		return diag.FromErr(err.Err)
 	}
 

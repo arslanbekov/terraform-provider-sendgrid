@@ -23,6 +23,7 @@ package sendgrid
 
 import (
 	"context"
+	"net/http"
 
 	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -128,6 +129,10 @@ func resourceSendgridSubuserRead(ctx context.Context, d *schema.ResourceData, m 
 
 	subUser, requestErr := c.ReadSubUser(ctx, d.Id())
 	if requestErr.Err != nil {
+		if requestErr.StatusCode == http.StatusNotFound {
+			d.SetId("")
+			return nil
+		}
 		return diag.FromErr(requestErr.Err)
 	}
 

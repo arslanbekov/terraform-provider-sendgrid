@@ -84,10 +84,10 @@ func (c *Client) ReadLinkBranding(ctx context.Context, id string) (*LinkBranding
 		}
 	}
 
-	respBody, _, err := c.Get(ctx, "GET", "/whitelabel/links/"+id)
+	respBody, statusCode, err := c.Get(ctx, "GET", "/whitelabel/links/"+id)
 	if err != nil {
 		return nil, RequestError{
-			StatusCode: http.StatusInternalServerError,
+			StatusCode: statusCode,
 			Err:        err,
 		}
 	}

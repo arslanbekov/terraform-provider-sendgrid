@@ -18,6 +18,7 @@ package sendgrid
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -548,14 +549,14 @@ func resourceSendgridTeammateRead(ctx context.Context, d *schema.ResourceData, m
 	var diags diag.Diagnostics
 	email := d.Id()
 
-	teammateStruct, err := sendgrid.RetryOnRateLimit(ctx, d, func() (interface{}, sendgrid.RequestError) {
-		return client.ReadUser(ctx, email)
-	})
-	if err != nil {
-		return append(diags, diag.FromErr(err)...)
+	teammate, readErr := client.ReadUser(ctx, email)
+	if readErr.Err != nil {
+		if readErr.StatusCode == http.StatusNotFound {
+			d.SetId("")
+			return nil
+		}
+		return append(diags, diag.FromErr(readErr.Err)...)
 	}
-
-	teammate := teammateStruct.(*sendgrid.User)
 
 	// There is no need to track admin scopes since they have full access.
 	if teammate.IsAdmin {
