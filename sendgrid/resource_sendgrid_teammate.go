@@ -376,6 +376,33 @@ func resourceSendgridTeammate() *schema.Resource {
 				Computed:    true,
 				Description: "The status of the user: 'active' for confirmed users, 'pending' for users who haven't accepted their invitation yet.",
 			},
+			"subuser_access": {
+				Type:     schema.TypeSet,
+				Optional: true,
+				Description: "Subuser permission grants for this SSO teammate. Only applies when `is_sso = true`. " +
+					"Setting at least one block sets `has_restricted_subuser_access = true` on the API; " +
+					"omitting or removing all blocks clears restricted subuser access.",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"id": {
+							Type:        schema.TypeInt,
+							Required:    true,
+							Description: "Numeric subuser account ID.",
+						},
+						"permission_type": {
+							Type:        schema.TypeString,
+							Required:    true,
+							Description: `Permission level for this subuser: "restricted" (use scopes) or "full".`,
+						},
+						"scopes": {
+							Type:        schema.TypeSet,
+							Optional:    true,
+							Description: "Scopes granted on this subuser. Required when permission_type is \"restricted\".",
+							Elem:        &schema.Schema{Type: schema.TypeString},
+						},
+					},
+				},
+			},
 		},
 	}
 }
@@ -462,6 +489,30 @@ func suppressDiffForPendingUsers(k, old, new string, d *schema.ResourceData) boo
 	return false
 }
 
+// extractSubuserAccess converts the TypeSet value from the schema into the SDK slice.
+func extractSubuserAccess(d *schema.ResourceData) []sendgrid.SubuserAccess {
+	raw := d.Get("subuser_access").(*schema.Set).List()
+	if len(raw) == 0 {
+		return nil
+	}
+
+	out := make([]sendgrid.SubuserAccess, 0, len(raw))
+	for _, item := range raw {
+		m := item.(map[string]interface{})
+		entry := sendgrid.SubuserAccess{
+			ID:             m["id"].(int),
+			PermissionType: m["permission_type"].(string),
+		}
+		if scopesRaw, ok := m["scopes"]; ok {
+			for _, s := range scopesRaw.(*schema.Set).List() {
+				entry.Scopes = append(entry.Scopes, s.(string))
+			}
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
 // enhancedRetryOnScopeErrors wraps the standard retry function with enhanced error handling for scope-related errors
 func enhancedRetryOnScopeErrors(ctx context.Context, d *schema.ResourceData, f func() (interface{}, sendgrid.RequestError)) (interface{}, error) {
 	resp, err := sendgrid.RetryOnRateLimit(ctx, d, f)
@@ -539,7 +590,21 @@ func resourceSendgridTeammateCreate(ctx context.Context, d *schema.ResourceData,
 		return diag.FromErr(err)
 	}
 
-	return nil
+	// Apply subuser_access immediately after creation (SSO only).
+	// The create endpoint does not accept subuser_access, so we do a follow-up PATCH.
+	if isSSO {
+		subuserAccess := extractSubuserAccess(d)
+		if len(subuserAccess) > 0 {
+			_, saErr := enhancedRetryOnScopeErrors(ctx, d, func() (interface{}, sendgrid.RequestError) {
+				return client.UpdateSSOUserWithSubuserAccess(ctx, firstName, lastName, email, scopes, isAdmin, subuserAccess)
+			})
+			if saErr != nil {
+				return diag.FromErr(saErr)
+			}
+		}
+	}
+
+	return resourceSendgridTeammateRead(ctx, d, meta)
 }
 
 func resourceSendgridTeammateRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -593,8 +658,37 @@ func resourceSendgridTeammateRead(ctx context.Context, d *schema.ResourceData, m
 		d.Set("is_admin", teammate.IsAdmin),
 		d.Set("user_status", userStatus),
 	)
+	if retErr.ErrorOrNil() != nil {
+		return diag.FromErr(retErr.ErrorOrNil())
+	}
 
-	return diag.FromErr(retErr.ErrorOrNil())
+	// Read subuser_access for active SSO teammates.
+	isSSO := d.Get("is_sso").(bool)
+	if isSSO && userStatus == "active" {
+		saResp, saErr := client.ReadSubuserAccess(ctx, email)
+		if saErr.Err != nil {
+			// Non-fatal: log and leave the attribute as-is rather than breaking the read.
+			tflog.Warn(ctx, "failed to read subuser_access", map[string]interface{}{
+				"email": email, "error": saErr.Err.Error(),
+			})
+		} else {
+			flatAccess := make([]map[string]interface{}, 0, len(saResp.SubuserAccess))
+			for _, entry := range saResp.SubuserAccess {
+				flatScopes := make([]string, len(entry.Scopes))
+				copy(flatScopes, entry.Scopes)
+				flatAccess = append(flatAccess, map[string]interface{}{
+					"id":              entry.ID,
+					"permission_type": entry.PermissionType,
+					"scopes":          flatScopes,
+				})
+			}
+			if err := d.Set("subuser_access", flatAccess); err != nil {
+				return diag.FromErr(err)
+			}
+		}
+	}
+
+	return nil
 }
 
 func resourceSendgridTeammateUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -638,10 +732,10 @@ func resourceSendgridTeammateUpdate(ctx context.Context, d *schema.ResourceData,
 
 	_, err := enhancedRetryOnScopeErrors(ctx, d, func() (interface{}, sendgrid.RequestError) {
 		if isSSO {
-			return client.UpdateSSOUser(ctx, firstName, lastName, email, scopes, isAdmin)
-		} else {
-			return client.UpdateUser(ctx, email, scopes, isAdmin)
+			subuserAccess := extractSubuserAccess(d)
+			return client.UpdateSSOUserWithSubuserAccess(ctx, firstName, lastName, email, scopes, isAdmin, subuserAccess)
 		}
+		return client.UpdateUser(ctx, email, scopes, isAdmin)
 	})
 
 	if err != nil {

@@ -28,6 +28,43 @@ type User struct {
 	Scopes    []string `json:"scopes,omitempty"`
 }
 
+// SubuserAccess represents a single subuser permission entry for a teammate.
+type SubuserAccess struct {
+	// ID is the numeric subuser account ID.
+	ID int `json:"id"`
+	// PermissionType is either "restricted" or "full".
+	PermissionType string `json:"permission_type"`
+	// Scopes is the list of scopes granted on this subuser (only meaningful for "restricted").
+	Scopes []string `json:"scopes,omitempty"`
+}
+
+// SubuserAccessRead is the per-entry shape returned by GET /v3/teammates/{username}/subuser_access.
+type SubuserAccessRead struct {
+	ID             int      `json:"id"`
+	Username       string   `json:"username,omitempty"`
+	Email          string   `json:"email,omitempty"`
+	Disabled       bool     `json:"disabled"`
+	PermissionType string   `json:"permission_type"`
+	Scopes         []string `json:"scopes,omitempty"`
+}
+
+// SubuserAccessResponse is the top-level body returned by GET /v3/teammates/{username}/subuser_access.
+type SubuserAccessResponse struct {
+	HasRestrictedSubuserAccess bool                `json:"has_restricted_subuser_access"`
+	SubuserAccess              []SubuserAccessRead `json:"subuser_access"`
+}
+
+// updateSSOTeammateRequest is the request body for PATCH /v3/sso/teammates/{username}.
+// We keep it separate from User to avoid polluting that struct with SSO-only fields.
+type updateSSOTeammateRequest struct {
+	FirstName                  string          `json:"first_name,omitempty"`
+	LastName                   string          `json:"last_name,omitempty"`
+	IsAdmin                    bool            `json:"is_admin"`
+	Scopes                     []string        `json:"scopes,omitempty"`
+	HasRestrictedSubuserAccess bool            `json:"has_restricted_subuser_access"`
+	SubuserAccess              []SubuserAccess `json:"subuser_access,omitempty"`
+}
+
 type Users struct {
 	Result []User `json:"result"`
 }
@@ -181,10 +218,21 @@ func (c *Client) UpdateUser(ctx context.Context, email string, scopes []string, 
 }
 
 func (c *Client) UpdateSSOUser(ctx context.Context, firstName, lastName, email string, scopes []string, isAdmin bool) (*User, RequestError) {
+	return c.UpdateSSOUserWithSubuserAccess(ctx, firstName, lastName, email, scopes, isAdmin, nil)
+}
+
+// UpdateSSOUserWithSubuserAccess calls PATCH /v3/sso/teammates/{username} and optionally sets
+// subuser_access. Pass nil for subuserAccess to leave subuser access unchanged (falls back to
+// standard UpdateSSOUser behaviour with has_restricted_subuser_access=false).
+func (c *Client) UpdateSSOUserWithSubuserAccess(
+	ctx context.Context,
+	firstName, lastName, email string,
+	scopes []string,
+	isAdmin bool,
+	subuserAccess []SubuserAccess,
+) (*User, RequestError) {
 	username, requestErr := c.GetUsernameByEmail(ctx, email)
 	if requestErr.Err != nil {
-		// If user not found in active teammates, they might be pending
-		// Pending users cannot be updated, so return an error
 		if requestErr.StatusCode == http.StatusNotFound {
 			return nil, RequestError{
 				StatusCode: http.StatusNotFound,
@@ -194,12 +242,16 @@ func (c *Client) UpdateSSOUser(ctx context.Context, firstName, lastName, email s
 		return nil, requestErr
 	}
 
-	respBody, statusCode, err := c.Post(ctx, "PATCH", "/sso/teammates/"+username, User{
-		FirstName: firstName,
-		LastName:  lastName,
-		IsAdmin:   isAdmin,
-		Scopes:    scopes,
-	})
+	req := updateSSOTeammateRequest{
+		FirstName:                  firstName,
+		LastName:                   lastName,
+		IsAdmin:                    isAdmin,
+		Scopes:                     scopes,
+		HasRestrictedSubuserAccess: len(subuserAccess) > 0,
+		SubuserAccess:              subuserAccess,
+	}
+
+	respBody, statusCode, err := c.Post(ctx, "PATCH", "/sso/teammates/"+username, req)
 	if err != nil {
 		return nil, RequestError{
 			StatusCode: statusCode,
@@ -208,6 +260,33 @@ func (c *Client) UpdateSSOUser(ctx context.Context, firstName, lastName, email s
 	}
 
 	return parseUser(respBody)
+}
+
+// ReadSubuserAccess calls GET /v3/teammates/{username}/subuser_access and returns the current
+// subuser access configuration for the given teammate email.
+func (c *Client) ReadSubuserAccess(ctx context.Context, email string) (*SubuserAccessResponse, RequestError) {
+	username, requestErr := c.GetUsernameByEmail(ctx, email)
+	if requestErr.Err != nil {
+		return nil, requestErr
+	}
+
+	respBody, statusCode, err := c.Get(ctx, "GET", "/teammates/"+username+"/subuser_access")
+	if err != nil {
+		return nil, RequestError{
+			StatusCode: statusCode,
+			Err:        fmt.Errorf("failed reading subuser_access for %s: %w", email, err),
+		}
+	}
+
+	var body SubuserAccessResponse
+	if jsonErr := json.Unmarshal([]byte(respBody), &body); jsonErr != nil {
+		return nil, RequestError{
+			StatusCode: http.StatusInternalServerError,
+			Err:        fmt.Errorf("failed parsing subuser_access response: %w", jsonErr),
+		}
+	}
+
+	return &body, RequestError{StatusCode: http.StatusOK, Err: nil}
 }
 
 func (c *Client) DeleteUser(ctx context.Context, email string) (bool, RequestError) {
