@@ -56,12 +56,19 @@ type SubuserAccessResponse struct {
 
 // updateSSOTeammateRequest is the request body for PATCH /v3/sso/teammates/{username}.
 // We keep it separate from User to avoid polluting that struct with SSO-only fields.
+//
+// is_admin and has_restricted_subuser_access both use omitempty so a zero value
+// (false) is omitted rather than sent. This preserves the provider's existing
+// "don't clobber out-of-band state" behaviour: an SSO teammate promoted to admin
+// or granted restricted subuser access outside Terraform is not silently reset
+// when an apply touches the teammate without managing those fields. The flag is
+// only sent (true) when at least one subuser_access block is being managed.
 type updateSSOTeammateRequest struct {
 	FirstName                  string          `json:"first_name,omitempty"`
 	LastName                   string          `json:"last_name,omitempty"`
-	IsAdmin                    bool            `json:"is_admin"`
+	IsAdmin                    bool            `json:"is_admin,omitempty"`
 	Scopes                     []string        `json:"scopes,omitempty"`
-	HasRestrictedSubuserAccess bool            `json:"has_restricted_subuser_access"`
+	HasRestrictedSubuserAccess bool            `json:"has_restricted_subuser_access,omitempty"`
 	SubuserAccess              []SubuserAccess `json:"subuser_access,omitempty"`
 }
 
@@ -222,8 +229,10 @@ func (c *Client) UpdateSSOUser(ctx context.Context, firstName, lastName, email s
 }
 
 // UpdateSSOUserWithSubuserAccess calls PATCH /v3/sso/teammates/{username} and optionally sets
-// subuser_access. Pass nil for subuserAccess to leave subuser access unchanged (falls back to
-// standard UpdateSSOUser behaviour with has_restricted_subuser_access=false).
+// subuser_access. When subuserAccess is nil or empty, has_restricted_subuser_access and
+// subuser_access are omitted from the request body (see updateSSOTeammateRequest), so the
+// teammate's existing subuser access is left untouched. Pass one or more entries to manage it;
+// doing so sets has_restricted_subuser_access=true and replaces the access list.
 func (c *Client) UpdateSSOUserWithSubuserAccess(
 	ctx context.Context,
 	firstName, lastName, email string,

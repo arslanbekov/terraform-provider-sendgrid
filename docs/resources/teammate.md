@@ -140,12 +140,25 @@ resource "sendgrid_teammate" "developers" {
 - `first_name` (String) The first name of the teammate. Required for SSO users.
 - `last_name` (String) The last name of the teammate. Required for SSO users.
 - `scopes` (Set of String) List of permission scopes for the teammate. Ignored if is_admin is true. Cannot include '2fa_exempt' or '2fa_required' as these are managed automatically by SendGrid. See SendGrid API documentation for available scopes.
+- `subuser_access` (Block Set) Subuser permission grants for this SSO teammate. Only applies when `is_sso = true`. Setting at least one block sets `has_restricted_subuser_access = true` on the API. Note: removing all blocks does not clear restricted access on the API (it is left untouched to avoid clobbering access managed outside Terraform); revoke it explicitly in SendGrid if needed. (see [below for nested schema](#nestedblock--subuser_access))
 - `username` (String) The username for the teammate. If not provided, the email will be used.
 
 ### Read-Only
 
 - `id` (String) The ID of this resource.
 - `user_status` (String) The status of the user: 'active' for confirmed users, 'pending' for users who haven't accepted their invitation yet.
+
+<a id="nestedblock--subuser_access"></a>
+### Nested Schema for `subuser_access`
+
+Required:
+
+- `id` (Number) Numeric subuser account ID.
+- `permission_type` (String) Permission level for this subuser: "restricted" (use scopes) or "full".
+
+Optional:
+
+- `scopes` (Set of String) Scopes granted on this subuser. Required when permission_type is "restricted"; ignored for "full".
 
 ## Import
 

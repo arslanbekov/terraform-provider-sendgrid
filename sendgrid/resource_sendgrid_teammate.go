@@ -28,6 +28,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
 // validSendgridScopes contains the actual list of valid SendGrid scopes
@@ -320,6 +321,15 @@ func resourceSendgridTeammate() *schema.Resource {
 			StateContext: schema.ImportStatePassthroughContext,
 		},
 
+		// subuser_access only applies to SSO teammates; the create/update paths
+		// silently ignore it for non-SSO users, so reject it at plan time instead.
+		CustomizeDiff: func(ctx context.Context, d *schema.ResourceDiff, meta interface{}) error {
+			if v, ok := d.GetOk("subuser_access"); ok && v.(*schema.Set).Len() > 0 && !d.Get("is_sso").(bool) {
+				return fmt.Errorf("subuser_access is only supported for SSO teammates (is_sso = true)")
+			}
+			return nil
+		},
+
 		Schema: map[string]*schema.Schema{
 			"email": {
 				Type:        schema.TypeString,
@@ -380,8 +390,15 @@ func resourceSendgridTeammate() *schema.Resource {
 				Type:     schema.TypeSet,
 				Optional: true,
 				Description: "Subuser permission grants for this SSO teammate. Only applies when `is_sso = true`. " +
-					"Setting at least one block sets `has_restricted_subuser_access = true` on the API; " +
-					"omitting or removing all blocks clears restricted subuser access.",
+					"Setting at least one block sets `has_restricted_subuser_access = true` on the API. " +
+					"Note: removing all blocks does not clear restricted access on the API (it is left untouched to " +
+					"avoid clobbering access managed outside Terraform); revoke it explicitly in SendGrid if needed.",
+				// Hash on the subuser id so a teammate has one logical block per subuser
+				// and reordering or scope echo-back from the API does not produce churn.
+				Set: func(v interface{}) int {
+					m := v.(map[string]interface{})
+					return m["id"].(int)
+				},
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"id": {
@@ -390,14 +407,15 @@ func resourceSendgridTeammate() *schema.Resource {
 							Description: "Numeric subuser account ID.",
 						},
 						"permission_type": {
-							Type:        schema.TypeString,
-							Required:    true,
-							Description: `Permission level for this subuser: "restricted" (use scopes) or "full".`,
+							Type:         schema.TypeString,
+							Required:     true,
+							ValidateFunc: validation.StringInSlice([]string{"restricted", "full"}, false),
+							Description:  `Permission level for this subuser: "restricted" (use scopes) or "full".`,
 						},
 						"scopes": {
 							Type:        schema.TypeSet,
 							Optional:    true,
-							Description: "Scopes granted on this subuser. Required when permission_type is \"restricted\".",
+							Description: "Scopes granted on this subuser. Required when permission_type is \"restricted\"; ignored for \"full\".",
 							Elem:        &schema.Schema{Type: schema.TypeString},
 						},
 					},
@@ -592,6 +610,9 @@ func resourceSendgridTeammateCreate(ctx context.Context, d *schema.ResourceData,
 
 	// Apply subuser_access immediately after creation (SSO only).
 	// The create endpoint does not accept subuser_access, so we do a follow-up PATCH.
+	// The teammate ID is already set above, so if this PATCH fails the teammate
+	// exists in state without subuser access; the error makes that explicit and the
+	// next apply reconciles it.
 	if isSSO {
 		subuserAccess := extractSubuserAccess(d)
 		if len(subuserAccess) > 0 {
@@ -599,7 +620,10 @@ func resourceSendgridTeammateCreate(ctx context.Context, d *schema.ResourceData,
 				return client.UpdateSSOUserWithSubuserAccess(ctx, firstName, lastName, email, scopes, isAdmin, subuserAccess)
 			})
 			if saErr != nil {
-				return diag.FromErr(saErr)
+				return diag.FromErr(fmt.Errorf(
+					"teammate %s was created but applying subuser_access failed; "+
+						"the teammate exists without subuser access and the next apply will reconcile it: %w",
+					email, saErr))
 			}
 		}
 	}
@@ -667,28 +691,41 @@ func resourceSendgridTeammateRead(ctx context.Context, d *schema.ResourceData, m
 	if isSSO && userStatus == "active" {
 		saResp, saErr := client.ReadSubuserAccess(ctx, email)
 		if saErr.Err != nil {
-			// Non-fatal: log and leave the attribute as-is rather than breaking the read.
-			tflog.Warn(ctx, "failed to read subuser_access", map[string]interface{}{
-				"email": email, "error": saErr.Err.Error(),
-			})
-		} else {
-			flatAccess := make([]map[string]interface{}, 0, len(saResp.SubuserAccess))
-			for _, entry := range saResp.SubuserAccess {
-				flatScopes := make([]string, len(entry.Scopes))
-				copy(flatScopes, entry.Scopes)
-				flatAccess = append(flatAccess, map[string]interface{}{
-					"id":              entry.ID,
-					"permission_type": entry.PermissionType,
-					"scopes":          flatScopes,
-				})
+			// Propagate the real status code rather than masking it (see #95):
+			// a vanished teammate (404) clears state; auth/server errors (401/5xx)
+			// surface as errors instead of silently leaving stale state behind.
+			if saErr.StatusCode == http.StatusNotFound {
+				d.SetId("")
+				return nil
 			}
-			if err := d.Set("subuser_access", flatAccess); err != nil {
-				return diag.FromErr(err)
-			}
+			return append(diags, diag.FromErr(saErr.Err)...)
+		}
+		if err := d.Set("subuser_access", flattenSubuserAccess(saResp.SubuserAccess)); err != nil {
+			return diag.FromErr(err)
 		}
 	}
 
 	return nil
+}
+
+// flattenSubuserAccess converts the API read response into the schema shape.
+// Scopes are only meaningful for "restricted" entries; for "full" the API may
+// echo scopes that cannot be managed, so they are dropped to avoid a perpetual
+// diff. Automatic scopes are stripped for the same reason as top-level scopes.
+func flattenSubuserAccess(entries []sendgrid.SubuserAccessRead) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(entries))
+	for _, entry := range entries {
+		m := map[string]interface{}{
+			"id":              entry.ID,
+			"permission_type": entry.PermissionType,
+			"scopes":          []string{},
+		}
+		if entry.PermissionType == "restricted" {
+			m["scopes"] = sanitizeScopes(entry.Scopes)
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 func resourceSendgridTeammateUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
