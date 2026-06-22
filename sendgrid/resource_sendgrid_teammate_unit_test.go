@@ -7,7 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
 func setupTeammateMockServer(handler http.Handler) (*httptest.Server, *Config) {
@@ -129,6 +131,152 @@ func TestTeammateRead_NotFound(t *testing.T) {
 	}
 	if d.Id() != "" {
 		t.Errorf("Read() should clear ID on 404, got: %s", d.Id())
+	}
+}
+
+func TestTeammateRead_SubuserAccess(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/teammates", func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.RawQuery, "limit=10000") {
+			_, _ = w.Write([]byte(`{"result":[{"username":"jdoe","email":"jdoe@example.com"}]}`))
+			return
+		}
+		http.NotFound(w, r)
+	})
+	mux.HandleFunc("/teammates/jdoe", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"username":"jdoe","email":"jdoe@example.com","is_admin":false,"user_type":"teammate"}`))
+	})
+	mux.HandleFunc("/teammates/jdoe/subuser_access", func(w http.ResponseWriter, r *http.Request) {
+		// restricted entry echoes an automatic scope (must be stripped); full entry
+		// echoes scopes that don't apply (must be dropped) — both would otherwise
+		// produce a perpetual diff.
+		_, _ = w.Write([]byte(`{
+			"has_restricted_subuser_access": true,
+			"subuser_access": [
+				{"id": 111, "permission_type": "restricted", "scopes": ["mail.send", "2fa_required"]},
+				{"id": 222, "permission_type": "full", "scopes": ["mail.send"]}
+			]
+		}`))
+	})
+	server, config := setupTeammateMockServer(mux)
+	defer server.Close()
+
+	r := resourceSendgridTeammate()
+	d := r.TestResourceData()
+	d.SetId("jdoe@example.com")
+	_ = d.Set("is_sso", true)
+
+	if diags := resourceSendgridTeammateRead(context.Background(), d, config); diags.HasError() {
+		t.Fatalf("Read() unexpected error: %v", diags)
+	}
+
+	access := d.Get("subuser_access").(*schema.Set).List()
+	if len(access) != 2 {
+		t.Fatalf("subuser_access length = %d, want 2", len(access))
+	}
+	byID := map[int]map[string]interface{}{}
+	for _, a := range access {
+		m := a.(map[string]interface{})
+		byID[m["id"].(int)] = m
+	}
+
+	rScopes := byID[111]["scopes"].(*schema.Set)
+	if rScopes.Len() != 1 || !rScopes.Contains("mail.send") {
+		t.Errorf("restricted scopes = %v, want [mail.send] (automatic scope stripped)", rScopes.List())
+	}
+	if fScopes := byID[222]["scopes"].(*schema.Set); fScopes.Len() != 0 {
+		t.Errorf("full entry scopes = %v, want empty (dropped)", fScopes.List())
+	}
+}
+
+func TestTeammateRead_SubuserAccessErrorPropagates(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/teammates", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"result":[{"username":"jdoe","email":"jdoe@example.com"}]}`))
+	})
+	mux.HandleFunc("/teammates/jdoe", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"username":"jdoe","email":"jdoe@example.com","is_admin":false,"user_type":"teammate"}`))
+	})
+	mux.HandleFunc("/teammates/jdoe/subuser_access", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"errors":[{"message":"boom"}]}`))
+	})
+	server, config := setupTeammateMockServer(mux)
+	defer server.Close()
+
+	r := resourceSendgridTeammate()
+	d := r.TestResourceData()
+	d.SetId("jdoe@example.com")
+	_ = d.Set("is_sso", true)
+
+	if diags := resourceSendgridTeammateRead(context.Background(), d, config); !diags.HasError() {
+		t.Fatal("expected Read() to surface the 5xx from subuser_access rather than masking it")
+	}
+}
+
+func TestFlattenSubuserAccess(t *testing.T) {
+	in := []sendgrid.SubuserAccessRead{
+		{ID: 1, PermissionType: "restricted", Scopes: []string{"mail.send", "2fa_exempt"}},
+		{ID: 2, PermissionType: "full", Scopes: []string{"mail.send"}},
+	}
+	out := flattenSubuserAccess(in)
+	if len(out) != 2 {
+		t.Fatalf("len = %d, want 2", len(out))
+	}
+	if got := out[0]["scopes"].([]string); len(got) != 1 || got[0] != "mail.send" {
+		t.Errorf("restricted scopes = %v, want [mail.send]", got)
+	}
+	if got := out[1]["scopes"].([]string); len(got) != 0 {
+		t.Errorf("full scopes = %v, want empty", got)
+	}
+}
+
+// TestTeammateSubuserAccessComputedNoDiff locks in the Optional+Computed behaviour:
+// when the prior state carries subuser_access (as Read populates it from the API) but
+// the config manages no block, the plan must be empty rather than wanting to remove it.
+func TestTeammateSubuserAccessComputedNoDiff(t *testing.T) {
+	r := resourceSendgridTeammate()
+
+	// Prior state: API returned one restricted subuser block (built through the
+	// resource schema so the TypeSet hashing matches the real Set function).
+	prior := r.Data(nil)
+	prior.SetId("jdoe@example.com")
+	_ = prior.Set("email", "jdoe@example.com")
+	_ = prior.Set("is_sso", true)
+	_ = prior.Set("is_admin", false)
+	_ = prior.Set("subuser_access", []map[string]interface{}{
+		{"id": 111, "permission_type": "restricted", "scopes": []string{"mail.send"}},
+	})
+	state := prior.State()
+
+	// Config manages no subuser_access block.
+	config := terraform.NewResourceConfigRaw(map[string]interface{}{
+		"email":    "jdoe@example.com",
+		"is_sso":   true,
+		"is_admin": false,
+	})
+
+	diff, err := r.Diff(context.Background(), state, config, nil)
+	if err != nil {
+		t.Fatalf("Diff() unexpected error: %v", err)
+	}
+	if diff != nil && !diff.Empty() {
+		t.Errorf("expected empty plan for unmanaged subuser_access (Computed), got diff: %#v", diff.Attributes)
+	}
+}
+
+func TestTeammatePermissionTypeValidation(t *testing.T) {
+	r := resourceSendgridTeammate()
+	elem := r.Schema["subuser_access"].Elem.(*schema.Resource)
+	vf := elem.Schema["permission_type"].ValidateFunc
+	if vf == nil {
+		t.Fatal("permission_type should have a ValidateFunc")
+	}
+	if _, errs := vf("restricted", "permission_type"); len(errs) != 0 {
+		t.Errorf("'restricted' should be valid, got %v", errs)
+	}
+	if _, errs := vf("typo", "permission_type"); len(errs) == 0 {
+		t.Error("'typo' should be rejected at plan time")
 	}
 }
 
