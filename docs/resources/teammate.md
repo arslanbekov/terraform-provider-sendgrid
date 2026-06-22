@@ -140,7 +140,7 @@ resource "sendgrid_teammate" "developers" {
 - `first_name` (String) The first name of the teammate. Required for SSO users.
 - `last_name` (String) The last name of the teammate. Required for SSO users.
 - `scopes` (Set of String) List of permission scopes for the teammate. Ignored if is_admin is true. Cannot include '2fa_exempt' or '2fa_required' as these are managed automatically by SendGrid. See SendGrid API documentation for available scopes.
-- `subuser_access` (Block Set) Subuser permission grants for this SSO teammate. Only applies when `is_sso = true`. Setting at least one block sets `has_restricted_subuser_access = true` on the API. Note: removing all blocks does not clear restricted access on the API (it is left untouched to avoid clobbering access managed outside Terraform); revoke it explicitly in SendGrid if needed. (see [below for nested schema](#nestedblock--subuser_access))
+- `subuser_access` (Block Set) Subuser permission grants for this SSO teammate. Only applies when `is_sso = true`. Setting at least one block sets `has_restricted_subuser_access = true` on the API. This attribute is also computed: when no block is managed it reflects the teammate's current server-side access without producing a diff, and removing all blocks falls back to that server value rather than clearing access (Terraform does not clobber access it does not manage). (see [below for nested schema](#nestedblock--subuser_access))
 - `username` (String) The username for the teammate. If not provided, the email will be used.
 
 ### Read-Only

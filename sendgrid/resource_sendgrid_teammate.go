@@ -389,10 +389,12 @@ func resourceSendgridTeammate() *schema.Resource {
 			"subuser_access": {
 				Type:     schema.TypeSet,
 				Optional: true,
+				Computed: true,
 				Description: "Subuser permission grants for this SSO teammate. Only applies when `is_sso = true`. " +
 					"Setting at least one block sets `has_restricted_subuser_access = true` on the API. " +
-					"Note: removing all blocks does not clear restricted access on the API (it is left untouched to " +
-					"avoid clobbering access managed outside Terraform); revoke it explicitly in SendGrid if needed.",
+					"This attribute is also computed: when no block is managed it reflects the teammate's " +
+					"current server-side access without producing a diff, and removing all blocks falls back to " +
+					"that server value rather than clearing access (Terraform does not clobber access it does not manage).",
 				// Hash on the subuser id so a teammate has one logical block per subuser
 				// and reordering or scope echo-back from the API does not produce churn.
 				Set: func(v interface{}) int {

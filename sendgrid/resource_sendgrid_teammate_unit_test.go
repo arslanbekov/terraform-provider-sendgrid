@@ -9,6 +9,7 @@ import (
 
 	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
 func setupTeammateMockServer(handler http.Handler) (*httptest.Server, *Config) {
@@ -227,6 +228,40 @@ func TestFlattenSubuserAccess(t *testing.T) {
 	}
 	if got := out[1]["scopes"].([]string); len(got) != 0 {
 		t.Errorf("full scopes = %v, want empty", got)
+	}
+}
+
+// TestTeammateSubuserAccessComputedNoDiff locks in the Optional+Computed behaviour:
+// when the prior state carries subuser_access (as Read populates it from the API) but
+// the config manages no block, the plan must be empty rather than wanting to remove it.
+func TestTeammateSubuserAccessComputedNoDiff(t *testing.T) {
+	r := resourceSendgridTeammate()
+
+	// Prior state: API returned one restricted subuser block (built through the
+	// resource schema so the TypeSet hashing matches the real Set function).
+	prior := r.Data(nil)
+	prior.SetId("jdoe@example.com")
+	_ = prior.Set("email", "jdoe@example.com")
+	_ = prior.Set("is_sso", true)
+	_ = prior.Set("is_admin", false)
+	_ = prior.Set("subuser_access", []map[string]interface{}{
+		{"id": 111, "permission_type": "restricted", "scopes": []string{"mail.send"}},
+	})
+	state := prior.State()
+
+	// Config manages no subuser_access block.
+	config := terraform.NewResourceConfigRaw(map[string]interface{}{
+		"email":    "jdoe@example.com",
+		"is_sso":   true,
+		"is_admin": false,
+	})
+
+	diff, err := r.Diff(context.Background(), state, config, nil)
+	if err != nil {
+		t.Fatalf("Diff() unexpected error: %v", err)
+	}
+	if diff != nil && !diff.Empty() {
+		t.Errorf("expected empty plan for unmanaged subuser_access (Computed), got diff: %#v", diff.Attributes)
 	}
 }
 
