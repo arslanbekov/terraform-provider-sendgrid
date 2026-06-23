@@ -154,11 +154,11 @@ resource "sendgrid_teammate" "developers" {
 Required:
 
 - `id` (Number) Numeric subuser account ID.
-- `permission_type` (String) Permission level for this subuser: "restricted" (use scopes) or "full".
+- `permission_type` (String) Permission level for this subuser: "admin" (full access) or "restricted" (limited to scopes). Per the SendGrid API these are the only two values.
 
 Optional:
 
-- `scopes` (Set of String) Scopes granted on this subuser. Required when permission_type is "restricted"; ignored for "full".
+- `scopes` (Set of String) Scopes granted on this subuser. Required when permission_type is "restricted"; ignored for "admin".
 
 ## Import
 

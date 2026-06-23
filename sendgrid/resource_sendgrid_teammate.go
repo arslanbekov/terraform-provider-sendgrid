@@ -411,13 +411,13 @@ func resourceSendgridTeammate() *schema.Resource {
 						"permission_type": {
 							Type:         schema.TypeString,
 							Required:     true,
-							ValidateFunc: validation.StringInSlice([]string{"restricted", "full"}, false),
-							Description:  `Permission level for this subuser: "restricted" (use scopes) or "full".`,
+							ValidateFunc: validation.StringInSlice([]string{"admin", "restricted"}, false),
+							Description:  `Permission level for this subuser: "admin" (full access) or "restricted" (limited to scopes). Per the SendGrid API these are the only two values.`,
 						},
 						"scopes": {
 							Type:        schema.TypeSet,
 							Optional:    true,
-							Description: "Scopes granted on this subuser. Required when permission_type is \"restricted\"; ignored for \"full\".",
+							Description: "Scopes granted on this subuser. Required when permission_type is \"restricted\"; ignored for \"admin\".",
 							Elem:        &schema.Schema{Type: schema.TypeString},
 						},
 					},
@@ -711,9 +711,9 @@ func resourceSendgridTeammateRead(ctx context.Context, d *schema.ResourceData, m
 }
 
 // flattenSubuserAccess converts the API read response into the schema shape.
-// Scopes are only meaningful for "restricted" entries; for "full" the API may
-// echo scopes that cannot be managed, so they are dropped to avoid a perpetual
-// diff. Automatic scopes are stripped for the same reason as top-level scopes.
+// Scopes are only meaningful for "restricted" entries; for "admin" (full access)
+// the API may echo scopes that cannot be managed, so they are dropped to avoid a
+// perpetual diff. Automatic scopes are stripped as for top-level scopes.
 func flattenSubuserAccess(entries []sendgrid.SubuserAccessRead) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(entries))
 	for _, entry := range entries {
