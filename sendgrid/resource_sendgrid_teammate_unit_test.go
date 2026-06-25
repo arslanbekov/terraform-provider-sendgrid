@@ -154,7 +154,7 @@ func TestTeammateRead_SubuserAccess(t *testing.T) {
 			"has_restricted_subuser_access": true,
 			"subuser_access": [
 				{"id": 111, "permission_type": "restricted", "scopes": ["mail.send", "2fa_required"]},
-				{"id": 222, "permission_type": "full", "scopes": ["mail.send"]}
+				{"id": 222, "permission_type": "admin", "scopes": ["mail.send"]}
 			]
 		}`))
 	})
@@ -184,8 +184,8 @@ func TestTeammateRead_SubuserAccess(t *testing.T) {
 	if rScopes.Len() != 1 || !rScopes.Contains("mail.send") {
 		t.Errorf("restricted scopes = %v, want [mail.send] (automatic scope stripped)", rScopes.List())
 	}
-	if fScopes := byID[222]["scopes"].(*schema.Set); fScopes.Len() != 0 {
-		t.Errorf("full entry scopes = %v, want empty (dropped)", fScopes.List())
+	if aScopes := byID[222]["scopes"].(*schema.Set); aScopes.Len() != 0 {
+		t.Errorf("admin entry scopes = %v, want empty (dropped)", aScopes.List())
 	}
 }
 
@@ -217,7 +217,7 @@ func TestTeammateRead_SubuserAccessErrorPropagates(t *testing.T) {
 func TestFlattenSubuserAccess(t *testing.T) {
 	in := []sendgrid.SubuserAccessRead{
 		{ID: 1, PermissionType: "restricted", Scopes: []string{"mail.send", "2fa_exempt"}},
-		{ID: 2, PermissionType: "full", Scopes: []string{"mail.send"}},
+		{ID: 2, PermissionType: "admin", Scopes: []string{"mail.send"}},
 	}
 	out := flattenSubuserAccess(in)
 	if len(out) != 2 {
@@ -227,7 +227,7 @@ func TestFlattenSubuserAccess(t *testing.T) {
 		t.Errorf("restricted scopes = %v, want [mail.send]", got)
 	}
 	if got := out[1]["scopes"].([]string); len(got) != 0 {
-		t.Errorf("full scopes = %v, want empty", got)
+		t.Errorf("admin scopes = %v, want empty", got)
 	}
 }
 
@@ -272,11 +272,17 @@ func TestTeammatePermissionTypeValidation(t *testing.T) {
 	if vf == nil {
 		t.Fatal("permission_type should have a ValidateFunc")
 	}
-	if _, errs := vf("restricted", "permission_type"); len(errs) != 0 {
-		t.Errorf("'restricted' should be valid, got %v", errs)
+	// Per the SendGrid API, permission_type is either "admin" or "restricted".
+	for _, valid := range []string{"admin", "restricted"} {
+		if _, errs := vf(valid, "permission_type"); len(errs) != 0 {
+			t.Errorf("%q should be valid, got %v", valid, errs)
+		}
 	}
-	if _, errs := vf("typo", "permission_type"); len(errs) == 0 {
-		t.Error("'typo' should be rejected at plan time")
+	// "full" is not a real API value and must be rejected; so must typos.
+	for _, invalid := range []string{"full", "typo"} {
+		if _, errs := vf(invalid, "permission_type"); len(errs) == 0 {
+			t.Errorf("%q should be rejected at plan time", invalid)
+		}
 	}
 }
 
