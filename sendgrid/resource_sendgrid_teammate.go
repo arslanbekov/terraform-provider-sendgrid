@@ -682,13 +682,16 @@ func resourceSendgridTeammateRead(ctx context.Context, d *schema.ResourceData, m
 		d.Set("last_name", teammate.LastName),
 		d.Set("scopes", filteredScopes),
 		d.Set("is_admin", teammate.IsAdmin),
+		d.Set("is_sso", teammate.IsSSO),
 		d.Set("user_status", userStatus),
 	)
 	if retErr.ErrorOrNil() != nil {
 		return diag.FromErr(retErr.ErrorOrNil())
 	}
 
-	// Read subuser_access for active SSO teammates.
+	// Read subuser_access for active SSO teammates. is_sso was just set from the
+	// API above, so d.Get reflects the current value (not stale state), which
+	// also lets freshly-imported SSO teammates populate subuser_access.
 	isSSO := d.Get("is_sso").(bool)
 	if isSSO && userStatus == "active" {
 		saResp, saErr := client.ReadSubuserAccess(ctx, email)

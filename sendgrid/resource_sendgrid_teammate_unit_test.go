@@ -144,7 +144,7 @@ func TestTeammateRead_SubuserAccess(t *testing.T) {
 		http.NotFound(w, r)
 	})
 	mux.HandleFunc("/teammates/jdoe", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"username":"jdoe","email":"jdoe@example.com","is_admin":false,"user_type":"teammate"}`))
+		_, _ = w.Write([]byte(`{"username":"jdoe","email":"jdoe@example.com","is_admin":false,"is_sso":true,"user_type":"teammate"}`))
 	})
 	mux.HandleFunc("/teammates/jdoe/subuser_access", func(w http.ResponseWriter, r *http.Request) {
 		// restricted entry echoes an automatic scope (must be stripped); full entry
@@ -195,7 +195,7 @@ func TestTeammateRead_SubuserAccessErrorPropagates(t *testing.T) {
 		_, _ = w.Write([]byte(`{"result":[{"username":"jdoe","email":"jdoe@example.com"}]}`))
 	})
 	mux.HandleFunc("/teammates/jdoe", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"username":"jdoe","email":"jdoe@example.com","is_admin":false,"user_type":"teammate"}`))
+		_, _ = w.Write([]byte(`{"username":"jdoe","email":"jdoe@example.com","is_admin":false,"is_sso":true,"user_type":"teammate"}`))
 	})
 	mux.HandleFunc("/teammates/jdoe/subuser_access", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
