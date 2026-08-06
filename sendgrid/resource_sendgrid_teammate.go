@@ -321,11 +321,23 @@ func resourceSendgridTeammate() *schema.Resource {
 			StateContext: schema.ImportStatePassthroughContext,
 		},
 
-		// subuser_access only applies to SSO teammates; the create/update paths
-		// silently ignore it for non-SSO users, so reject it at plan time instead.
 		CustomizeDiff: func(ctx context.Context, d *schema.ResourceDiff, meta interface{}) error {
-			if v, ok := d.GetOk("subuser_access"); ok && v.(*schema.Set).Len() > 0 && !d.Get("is_sso").(bool) {
+			hasSubuserAccess := false
+			if v, ok := d.GetOk("subuser_access"); ok {
+				hasSubuserAccess = v.(*schema.Set).Len() > 0
+			}
+
+			// subuser_access only applies to SSO teammates; the create/update
+			// paths silently ignore it for non-SSO users, so reject it here.
+			if hasSubuserAccess && !d.Get("is_sso").(bool) {
 				return fmt.Errorf("subuser_access is only supported for SSO teammates (is_sso = true)")
+			}
+
+			// scopes is frozen server-side once subuser_access is managed
+			// (Update() never resends it), so an explicit "scopes = []" would
+			// otherwise show a diff Update() can never actually apply.
+			if hasSubuserAccess {
+				return d.Clear("scopes")
 			}
 			return nil
 		},

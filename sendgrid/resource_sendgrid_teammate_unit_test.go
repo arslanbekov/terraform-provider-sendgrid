@@ -268,6 +268,46 @@ func TestTeammateSubuserAccessComputedNoDiff(t *testing.T) {
 	}
 }
 
+// TestTeammateScopesClearedWithSubuserAccess covers the case Computed alone
+// doesn't handle: an explicit "scopes = []" against a teammate that already
+// has subuser_access managed. Update() can never actually clear a leftover
+// scope, so CustomizeDiff must drop it rather than show a diff that never
+// converges.
+func TestTeammateScopesClearedWithSubuserAccess(t *testing.T) {
+	r := resourceSendgridTeammate()
+
+	prior := r.Data(nil)
+	prior.SetId("jdoe@example.com")
+	_ = prior.Set("email", "jdoe@example.com")
+	_ = prior.Set("is_sso", true)
+	_ = prior.Set("is_admin", false)
+	_ = prior.Set("scopes", []string{"user.profile.read"})
+	_ = prior.Set("subuser_access", []map[string]interface{}{
+		{"id": 111, "permission_type": "admin"},
+	})
+	state := prior.State()
+
+	config := terraform.NewResourceConfigRaw(map[string]interface{}{
+		"email":    "jdoe@example.com",
+		"is_sso":   true,
+		"is_admin": false,
+		"scopes":   []interface{}{},
+		"subuser_access": []interface{}{
+			map[string]interface{}{"id": 111, "permission_type": "admin"},
+		},
+	})
+
+	diff, err := r.Diff(context.Background(), state, config, nil)
+	if err != nil {
+		t.Fatalf("Diff() unexpected error: %v", err)
+	}
+	if diff != nil {
+		if _, ok := diff.Attributes["scopes.#"]; ok {
+			t.Errorf("expected scopes diff to be cleared, got: %#v", diff.Attributes)
+		}
+	}
+}
+
 func TestTeammatePermissionTypeValidation(t *testing.T) {
 	r := resourceSendgridTeammate()
 	elem := r.Schema["subuser_access"].Elem.(*schema.Resource)
