@@ -2,6 +2,8 @@ package sendgrid
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -244,6 +246,7 @@ func TestTeammateSubuserAccessComputedNoDiff(t *testing.T) {
 	_ = prior.Set("email", "jdoe@example.com")
 	_ = prior.Set("is_sso", true)
 	_ = prior.Set("is_admin", false)
+	_ = prior.Set("scopes", []string{"user.profile.read"})
 	_ = prior.Set("subuser_access", []map[string]interface{}{
 		{"id": 111, "permission_type": "restricted", "scopes": []string{"mail.send"}},
 	})
@@ -292,15 +295,16 @@ func TestTeammateResourceSchema(t *testing.T) {
 	tests := []struct {
 		field    string
 		required bool
+		computed bool
 	}{
-		{"email", true},
-		{"is_admin", true},
-		{"is_sso", true},
-		{"first_name", false},
-		{"last_name", false},
-		{"scopes", false},
-		{"username", false},
-		{"user_status", false},
+		{"email", true, false},
+		{"is_admin", true, false},
+		{"is_sso", true, false},
+		{"first_name", false, false},
+		{"last_name", false, false},
+		{"scopes", false, true},
+		{"username", false, false},
+		{"user_status", false, true},
 	}
 
 	for _, tt := range tests {
@@ -312,10 +316,136 @@ func TestTeammateResourceSchema(t *testing.T) {
 			if s.Required != tt.required {
 				t.Errorf("%s Required = %v, want %v", tt.field, s.Required, tt.required)
 			}
+			if s.Computed != tt.computed {
+				t.Errorf("%s Computed = %v, want %v", tt.field, s.Computed, tt.computed)
+			}
 		})
 	}
 
 	if r.Importer == nil {
 		t.Error("resource should have an Importer configured")
+	}
+}
+
+// TestTeammateCreate_SubuserOnly locks in the create-time fix: a placeholder
+// scope for the create call, never resent by the subuser_access follow-up.
+func TestTeammateCreate_SubuserOnly(t *testing.T) {
+	var createBody, patchBody map[string]interface{}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/sso/teammates", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &createBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"username":"jdoe@example.com","email":"jdoe@example.com","first_name":"John","last_name":"Doe","is_sso":true}`))
+	})
+	mux.HandleFunc("/sso/teammates/jdoe@example.com", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			http.NotFound(w, r)
+			return
+		}
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &patchBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"username":"jdoe@example.com","email":"jdoe@example.com"}`))
+	})
+	mux.HandleFunc("/teammates", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"result":[{"username":"jdoe@example.com","email":"jdoe@example.com"}]}`))
+	})
+	mux.HandleFunc("/teammates/jdoe@example.com", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"username":"jdoe@example.com","email":"jdoe@example.com","first_name":"John","last_name":"Doe","is_admin":false,"is_sso":true,"user_type":"teammate"}`))
+	})
+	mux.HandleFunc("/teammates/jdoe@example.com/subuser_access", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"has_restricted_subuser_access":true,"subuser_access":[{"id":111,"permission_type":"admin"}]}`))
+	})
+
+	server, config := setupTeammateMockServer(mux)
+	defer server.Close()
+
+	r := resourceSendgridTeammate()
+	d := r.TestResourceData()
+	_ = d.Set("email", "jdoe@example.com")
+	_ = d.Set("first_name", "John")
+	_ = d.Set("last_name", "Doe")
+	_ = d.Set("is_admin", false)
+	_ = d.Set("is_sso", true)
+	_ = d.Set("subuser_access", []interface{}{
+		map[string]interface{}{"id": 111, "permission_type": "admin"},
+	})
+
+	if diags := resourceSendgridTeammateCreate(context.Background(), d, config); diags.HasError() {
+		t.Fatalf("Create() returned unexpected error: %v", diags)
+	}
+
+	createScopes, _ := createBody["scopes"].([]interface{})
+	if len(createScopes) == 0 {
+		t.Errorf("create body scopes = %v, want a non-empty placeholder so SendGrid accepts the create", createBody["scopes"])
+	}
+
+	if _, ok := patchBody["scopes"]; ok {
+		t.Errorf("subuser_access patch body = %v, must not include scopes", patchBody)
+	}
+	if _, ok := patchBody["subuser_access"]; !ok {
+		t.Errorf("subuser_access patch body = %v, want subuser_access", patchBody)
+	}
+}
+
+// TestTeammateUpdate_SubuserAccess locks in that scopes is never resent once
+// subuser_access is managed, even if a stray value is still configured.
+func TestTeammateUpdate_SubuserAccess(t *testing.T) {
+	var patchBody map[string]interface{}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/teammates", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"result":[{"username":"jdoe@example.com","email":"jdoe@example.com"}]}`))
+	})
+	mux.HandleFunc("/sso/teammates/jdoe@example.com", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			http.NotFound(w, r)
+			return
+		}
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &patchBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"username":"jdoe@example.com","email":"jdoe@example.com"}`))
+	})
+	mux.HandleFunc("/teammates/jdoe@example.com", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"username":"jdoe@example.com","email":"jdoe@example.com","first_name":"John","last_name":"Doe","is_admin":false,"is_sso":true,"user_type":"active"}`))
+	})
+	mux.HandleFunc("/teammates/jdoe@example.com/subuser_access", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"has_restricted_subuser_access":true,"subuser_access":[{"id":111,"permission_type":"admin"}]}`))
+	})
+
+	server, config := setupTeammateMockServer(mux)
+	defer server.Close()
+
+	r := resourceSendgridTeammate()
+	d := r.TestResourceData()
+	d.SetId("jdoe@example.com")
+	_ = d.Set("email", "jdoe@example.com")
+	_ = d.Set("first_name", "John")
+	_ = d.Set("last_name", "Doe")
+	_ = d.Set("is_admin", false)
+	_ = d.Set("is_sso", true)
+	_ = d.Set("user_status", "active")
+	// Stray leftover scope - must not be resent alongside subuser_access.
+	_ = d.Set("scopes", []interface{}{"user.profile.read"})
+	_ = d.Set("subuser_access", []interface{}{
+		map[string]interface{}{"id": 111, "permission_type": "admin"},
+	})
+
+	if diags := resourceSendgridTeammateUpdate(context.Background(), d, config); diags.HasError() {
+		t.Fatalf("Update() returned unexpected error: %v", diags)
+	}
+
+	if _, ok := patchBody["scopes"]; ok {
+		t.Errorf("update patch body = %v, must not include scopes alongside subuser_access", patchBody)
+	}
+	if _, ok := patchBody["subuser_access"]; !ok {
+		t.Errorf("update patch body = %v, want subuser_access", patchBody)
 	}
 }

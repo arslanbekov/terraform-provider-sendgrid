@@ -366,8 +366,9 @@ func resourceSendgridTeammate() *schema.Resource {
 			},
 			"scopes": {
 				Type:        schema.TypeSet,
-				Description: "List of permission scopes for the teammate. Ignored if is_admin is true. Cannot include '2fa_exempt' or '2fa_required' as these are managed automatically by SendGrid. See SendGrid API documentation for available scopes.",
+				Description: "List of permission scopes for the teammate. Ignored if is_admin is true. Cannot include '2fa_exempt' or '2fa_required' as these are managed automatically by SendGrid. Also frozen once subuser_access is set - leave unset for a subuser-only teammate. See SendGrid API documentation for available scopes.",
 				Optional:    true,
+				Computed:    true,
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
@@ -588,6 +589,15 @@ func resourceSendgridTeammateCreate(ctx context.Context, d *schema.ResourceData,
 		scopes = sanitizeScopes(scopes)
 	}
 
+	subuserAccess := extractSubuserAccess(d)
+
+	// SendGrid rejects an empty scopes list on create, even for a subuser-only
+	// teammate (root scopes aren't accepted in this call anyway). Placeholder
+	// scope only - never resent by the follow-up subuser_access call below.
+	if isSSO && !isAdmin && len(scopes) == 0 && len(subuserAccess) > 0 {
+		scopes = []string{"user.profile.read"}
+	}
+
 	tflog.Debug(ctx, "Creating teammate", map[string]interface{}{
 		"first_name": firstName, "last_name": lastName,
 		"email": email, "is_admin": isAdmin, "scopes": scopes,
@@ -615,18 +625,17 @@ func resourceSendgridTeammateCreate(ctx context.Context, d *schema.ResourceData,
 	// The teammate ID is already set above, so if this PATCH fails the teammate
 	// exists in state without subuser access; the error makes that explicit and the
 	// next apply reconciles it.
-	if isSSO {
-		subuserAccess := extractSubuserAccess(d)
-		if len(subuserAccess) > 0 {
-			_, saErr := enhancedRetryOnScopeErrors(ctx, d, func() (interface{}, sendgrid.RequestError) {
-				return client.UpdateSSOUserWithSubuserAccess(ctx, firstName, lastName, email, scopes, isAdmin, subuserAccess)
-			})
-			if saErr != nil {
-				return diag.FromErr(fmt.Errorf(
-					"teammate %s was created but applying subuser_access failed; "+
-						"the teammate exists without subuser access and the next apply will reconcile it: %w",
-					email, saErr))
-			}
+	//
+	// scopes is omitted here: SendGrid rejects scopes alongside subuser_access.
+	if isSSO && len(subuserAccess) > 0 {
+		_, saErr := enhancedRetryOnScopeErrors(ctx, d, func() (interface{}, sendgrid.RequestError) {
+			return client.UpdateSSOUserWithSubuserAccess(ctx, firstName, lastName, email, nil, isAdmin, subuserAccess)
+		})
+		if saErr != nil {
+			return diag.FromErr(fmt.Errorf(
+				"teammate %s was created but applying subuser_access failed; "+
+					"the teammate exists without subuser access and the next apply will reconcile it: %w",
+				email, saErr))
 		}
 	}
 
@@ -775,7 +784,12 @@ func resourceSendgridTeammateUpdate(ctx context.Context, d *schema.ResourceData,
 	_, err := enhancedRetryOnScopeErrors(ctx, d, func() (interface{}, sendgrid.RequestError) {
 		if isSSO {
 			subuserAccess := extractSubuserAccess(d)
-			return client.UpdateSSOUserWithSubuserAccess(ctx, firstName, lastName, email, scopes, isAdmin, subuserAccess)
+			// scopes is omitted here too: SendGrid rejects scopes alongside subuser_access.
+			updateScopes := scopes
+			if len(subuserAccess) > 0 {
+				updateScopes = nil
+			}
+			return client.UpdateSSOUserWithSubuserAccess(ctx, firstName, lastName, email, updateScopes, isAdmin, subuserAccess)
 		}
 		return client.UpdateUser(ctx, email, scopes, isAdmin)
 	})
