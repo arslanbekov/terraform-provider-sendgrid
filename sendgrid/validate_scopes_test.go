@@ -38,6 +38,12 @@ func TestValidateTeammateScopes(t *testing.T) {
 			errorContains: "set automatically by SendGrid",
 		},
 		{
+			name:          "automatic self-service credential scope",
+			scopes:        []interface{}{"mail.send", "user.password.read"},
+			expectErrors:  true,
+			errorContains: "set automatically by SendGrid",
+		},
+		{
 			name:          "mix of valid and invalid",
 			scopes:        []interface{}{"mail.send", "invalid.scope", "templates.read"},
 			expectErrors:  true,
@@ -115,6 +121,22 @@ func TestSanitizeScopes(t *testing.T) {
 			name:     "only automatic scopes",
 			input:    []string{"2fa_exempt", "2fa_required"},
 			expected: []string{},
+		},
+		{
+			name: "with self-service credential scopes",
+			input: []string{
+				"mail.send",
+				"user.email.update",
+				"user.multifactor_authentication.create",
+				"user.multifactor_authentication.delete",
+				"user.multifactor_authentication.read",
+				"user.multifactor_authentication.update",
+				"user.password.read",
+				"user.password.update",
+				"user.username.update",
+				"templates.read",
+			},
+			expected: []string{"mail.send", "templates.read"},
 		},
 	}
 
