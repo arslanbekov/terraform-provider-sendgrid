@@ -1,3 +1,5 @@
+
+
 # Terraform Provider for SendGrid
 
 [![Build Status](https://github.com/arslanbekov/terraform-provider-sendgrid/workflows/Tests/badge.svg)](https://github.com/arslanbekov/terraform-provider-sendgrid/actions)
@@ -86,7 +88,7 @@ tofu init && tofu apply
 - **SSO**: `sendgrid_sso_integration`, `sendgrid_sso_certificate` - Single Sign-On setup
 - **Subusers**: `sendgrid_subuser` - Subuser account management
 - **Unsubscribe Groups**: `sendgrid_unsubscribe_group` - Manage unsubscribe groups
-- **Domain Validation**: `sendgrid_domain_authentication_validation` - Domain DNS validation
+- **Domain Validation**: `sendgrid_domain_authentication_validation` - Domain authentication validation
 
 See [full documentation](docs/RESOURCES.md) for details.
 
