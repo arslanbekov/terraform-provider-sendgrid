@@ -301,6 +301,17 @@ var sendgridAutomaticScopes = map[string]bool{
 	"2fa_exempt":                 true,
 	"2fa_required":               true,
 	"sender_verification_legacy": true, // SendGrid manages this scope automatically
+	// Self-service credential scopes: SendGrid grants these automatically to
+	// password-login teammates so they can manage their own credentials, and
+	// rejects them when supplied via the teammates API.
+	"user.email.update":                      true,
+	"user.multifactor_authentication.create": true,
+	"user.multifactor_authentication.delete": true,
+	"user.multifactor_authentication.read":   true,
+	"user.multifactor_authentication.update": true,
+	"user.password.read":                     true,
+	"user.password.update":                   true,
+	"user.username.update":                   true,
 }
 
 func resourceSendgridTeammate() *schema.Resource {
@@ -310,6 +321,7 @@ func resourceSendgridTeammate() *schema.Resource {
 **Important Notes:**
 - Admin teammates have full access and don't need scopes
 - Scopes '2fa_exempt' and '2fa_required' are set automatically by SendGrid
+- Self-service credential scopes (user.password.*, user.multifactor_authentication.*, user.email.update, user.username.update) are granted automatically by SendGrid to password-login teammates and cannot be assigned manually
 - Some scopes require specific SendGrid plans (Pro+, Marketing plans, etc.)
 - Use timeouts for better reliability with rate limiting`,
 
