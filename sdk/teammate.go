@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
 type User struct {
@@ -52,6 +54,71 @@ type SubuserAccessRead struct {
 type SubuserAccessResponse struct {
 	HasRestrictedSubuserAccess bool                `json:"has_restricted_subuser_access"`
 	SubuserAccess              []SubuserAccessRead `json:"subuser_access"`
+}
+
+// The subuser access listing is paginated: it returns at most `limit` entries
+// (100 when the parameter is omitted) and publishes the next cursor under
+// `_metadata`. Every caller here needs the whole list, because a partial list is
+// what the next update would write back - the PATCH replaces subuser_access
+// wholesale, so entries missing from a truncated read would lose access. That is
+// why this walk would rather fail than hand back an incomplete list.
+const (
+	subuserAccessPageLimit = 500
+
+	// Bounds the walk so a response that keeps producing pages cannot spin
+	// forever. Reaching it is an error, not a quiet stop.
+	subuserAccessMaxPages = 40
+)
+
+// subuserAccessCursor is an `after_subuser_id` value from a response. SendGrid
+// renders `_metadata.next_params` values as strings on some endpoints and as
+// numbers on others, so accept either rather than silently reading no cursor.
+type subuserAccessCursor int
+
+func (c *subuserAccessCursor) UnmarshalJSON(raw []byte) error {
+	text := strings.Trim(string(raw), `"`)
+	if text == "" || text == "null" {
+		return nil
+	}
+
+	value, err := strconv.Atoi(text)
+	if err != nil {
+		return fmt.Errorf("unexpected after_subuser_id %s: %w", raw, err)
+	}
+	*c = subuserAccessCursor(value)
+
+	return nil
+}
+
+// subuserAccessMetadata models the pagination cursor. The reference documents it
+// under `next_params`; accept it directly on `_metadata` as well, because the
+// same field is described both ways.
+type subuserAccessMetadata struct {
+	NextParams struct {
+		AfterSubuserID *subuserAccessCursor `json:"after_subuser_id"`
+	} `json:"next_params"`
+	AfterSubuserID *subuserAccessCursor `json:"after_subuser_id"`
+}
+
+// nextCursor reports the cursor the server published, and whether it published
+// one at all. No cursor means the server says nothing is outstanding.
+func (m subuserAccessMetadata) nextCursor() (int, bool) {
+	if m.NextParams.AfterSubuserID != nil {
+		return int(*m.NextParams.AfterSubuserID), true
+	}
+	if m.AfterSubuserID != nil {
+		return int(*m.AfterSubuserID), true
+	}
+
+	return 0, false
+}
+
+// subuserAccessPage is one response of the listing. It is separate from
+// SubuserAccessResponse, which is the aggregate this package hands back.
+type subuserAccessPage struct {
+	HasRestrictedSubuserAccess bool                  `json:"has_restricted_subuser_access"`
+	SubuserAccess              []SubuserAccessRead   `json:"subuser_access"`
+	Metadata                   subuserAccessMetadata `json:"_metadata"`
 }
 
 // updateSSOTeammateRequest is the request body for PATCH /v3/sso/teammates/{username}.
@@ -279,23 +346,121 @@ func (c *Client) ReadSubuserAccess(ctx context.Context, email string) (*SubuserA
 		return nil, requestErr
 	}
 
-	respBody, statusCode, err := c.Get(ctx, "GET", "/teammates/"+username+"/subuser_access")
-	if err != nil {
-		return nil, RequestError{
-			StatusCode: statusCode,
-			Err:        fmt.Errorf("failed reading subuser_access for %s: %w", email, err),
+	// Walk the pages until the server says nothing is outstanding. Anything else
+	// that ends the walk - a page that does not advance, the page budget - is an
+	// error: a partial list here becomes state, and state is what the next update
+	// writes back over the real access.
+	out := SubuserAccessResponse{}
+	seen := make(map[int]bool)
+	after := 0
+	complete := false
+
+	for page := 0; page < subuserAccessMaxPages && !complete; page++ {
+		endpoint := fmt.Sprintf("/teammates/%s/subuser_access?limit=%d", username, subuserAccessPageLimit)
+		if page > 0 {
+			endpoint += fmt.Sprintf("&after_subuser_id=%d", after)
+		}
+
+		respBody, statusCode, err := c.Get(ctx, "GET", endpoint)
+		if err != nil {
+			// Only the first request can mean "no such teammate". Passing a later
+			// page's 404 up would tell the caller the teammate is gone, and the
+			// resource clears itself from state when it hears that.
+			status := statusCode
+			if page > 0 {
+				status = http.StatusInternalServerError
+			}
+
+			return nil, RequestError{
+				StatusCode: status,
+				Err:        fmt.Errorf("failed reading subuser_access for %s at cursor %d: %w", email, after, err),
+			}
+		}
+
+		var body subuserAccessPage
+		if jsonErr := json.Unmarshal([]byte(respBody), &body); jsonErr != nil {
+			return nil, RequestError{
+				StatusCode: http.StatusInternalServerError,
+				Err:        fmt.Errorf("failed parsing subuser_access response: %w", jsonErr),
+			}
+		}
+
+		if page == 0 {
+			out.HasRestrictedSubuserAccess = body.HasRestrictedSubuserAccess
+
+			// Without restricted access the entry list is every subuser on the
+			// account, which says nothing about this teammate and which the caller
+			// discards. Do not page through it - and this is a finished read, not a
+			// walk that gave up.
+			if !body.HasRestrictedSubuserAccess {
+				complete = true
+				break
+			}
+		}
+
+		added := 0
+		maxID := after
+		for _, entry := range body.SubuserAccess {
+			// Dedupe on the id itself rather than on the cursor: a repeated page
+			// must not become duplicate entries, and an entry the server orders
+			// after a higher id must not be dropped.
+			if seen[entry.ID] {
+				continue
+			}
+			seen[entry.ID] = true
+			out.SubuserAccess = append(out.SubuserAccess, entry)
+			added++
+			if entry.ID > maxID {
+				maxID = entry.ID
+			}
+		}
+
+		next, published := body.Metadata.nextCursor()
+		full := len(body.SubuserAccess) >= subuserAccessPageLimit
+
+		switch {
+		case len(body.SubuserAccess) == 0:
+			complete = true
+		case published && next > after:
+			after = next
+		case published:
+			// A cursor that does not move is a server contradicting itself.
+			return nil, RequestError{
+				StatusCode: http.StatusInternalServerError,
+				Err: fmt.Errorf(
+					"subuser_access for %s published cursor %d at or before the current cursor %d; refusing to return a partial list",
+					email, next, after),
+			}
+		case !full:
+			// No cursor and the page was not even full: the list is finished. This
+			// is the common path, and it costs no extra request.
+			complete = true
+		case added == 0 || maxID <= after:
+			// A full page with no cursor that did not advance means the walk cannot
+			// make progress. Reporting success here would hand back exactly the
+			// truncated list this function exists to prevent.
+			return nil, RequestError{
+				StatusCode: http.StatusInternalServerError,
+				Err: fmt.Errorf(
+					"subuser_access for %s did not advance past id %d; refusing to return a partial list",
+					email, after),
+			}
+		default:
+			// A full page and no cursor: keep walking from the highest id seen.
+			after = maxID
 		}
 	}
 
-	var body SubuserAccessResponse
-	if jsonErr := json.Unmarshal([]byte(respBody), &body); jsonErr != nil {
+	if !complete {
 		return nil, RequestError{
 			StatusCode: http.StatusInternalServerError,
-			Err:        fmt.Errorf("failed parsing subuser_access response: %w", jsonErr),
+			Err: fmt.Errorf(
+				"subuser_access for %s did not finish within %d pages; refusing to return a partial list",
+				email, subuserAccessMaxPages),
 		}
 	}
 
-	return &body, RequestError{StatusCode: http.StatusOK, Err: nil}
+	return &out, RequestError{StatusCode: http.StatusOK, Err: nil}
 }
 
 func (c *Client) DeleteUser(ctx context.Context, email string) (bool, RequestError) {
