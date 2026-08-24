@@ -18,9 +18,9 @@ func TestAccSendgridWebhookSecurityPolicyOidcOnly(t *testing.T) {
 	name := "OIDC Only Policy" + acctest.RandString(5)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridWebhookSecurityPolicyDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridWebhookSecurityPolicyDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridWebhookSecurityPolicyOidcOnly(name, client_id, client_secret, token_url),
@@ -82,9 +82,9 @@ func TestAccSendgridWebhookSecurityPolicySignatureOnly(t *testing.T) {
 	name := "Signature Only Policy" + acctest.RandString(5)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridWebhookSecurityPolicyDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridWebhookSecurityPolicyDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridWebhookSecurityPolicySignatureOnly(name),
@@ -140,9 +140,9 @@ func TestAccSendgridWebhookSecurityPolicyOidcAndSignature(t *testing.T) {
 	name := "OIDC and Signature Policy" + acctest.RandString(5)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridWebhookSecurityPolicyDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridWebhookSecurityPolicyDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridWebhookSecurityPolicySignatureAndOidc(name, client_id, client_secret, token_url),
@@ -185,9 +185,9 @@ func TestAccSendgridWebhookSecurityPolicyUpdate(t *testing.T) {
 	nameUpdated := "Updated Signature Policy " + acctest.RandString(10)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridWebhookSecurityPolicyDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridWebhookSecurityPolicyDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridWebhookSecurityPolicySignatureUpdate(name),

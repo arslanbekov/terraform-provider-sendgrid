@@ -15,9 +15,9 @@ func TestAccSendgridDomainAuthenticationBasic(t *testing.T) {
 	domain := "test-" + acctest.RandString(10) + ".example.com"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridDomainAuthenticationDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridDomainAuthenticationDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridDomainAuthenticationConfigBasic(domain),
@@ -37,9 +37,9 @@ func TestAccSendgridDomainAuthenticationCustomIPs(t *testing.T) {
 	customIPs := []string{"192.168.1.1", "192.168.1.2"}
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridDomainAuthenticationDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridDomainAuthenticationDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridDomainAuthenticationConfigCustomIPs(domain, customIPs),
@@ -57,9 +57,9 @@ func TestAccSendgridDomainAuthenticationWithRateLimiting(t *testing.T) {
 	domain := "rate-limit-" + acctest.RandString(10) + ".example.com"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridDomainAuthenticationDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridDomainAuthenticationDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridDomainAuthenticationConfigWithTimeouts(domain),
@@ -162,9 +162,9 @@ func TestAccCheckSendgridDomainAuthenticationOnBehalfOf(t *testing.T) {
 	password := "TerraformTest123!"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridDomainAuthenticationDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridDomainAuthenticationDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridDomainAuthenticationConfigOnBehalfOf(username, email, password, domain),

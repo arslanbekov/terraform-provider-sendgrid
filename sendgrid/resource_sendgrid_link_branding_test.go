@@ -15,9 +15,9 @@ func TestAccSendgridLinkBrandingBasic(t *testing.T) {
 	domain := "links-" + acctest.RandString(10) + ".example.com"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridLinkBrandingDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridLinkBrandingDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridLinkBrandingConfigBasic(domain),
@@ -36,9 +36,9 @@ func TestAccSendgridLinkBrandingWithSubdomain(t *testing.T) {
 	subdomain := "mail"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridLinkBrandingDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridLinkBrandingDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridLinkBrandingConfigWithSubdomain(domain, subdomain),
@@ -58,9 +58,9 @@ func TestAccSendgridLinkBrandingUpdate(t *testing.T) {
 	domainUpdated := "links-updated-" + acctest.RandString(10) + ".example.com"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridLinkBrandingDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridLinkBrandingDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridLinkBrandingConfigBasic(domain),
@@ -84,9 +84,9 @@ func TestAccSendgridLinkBrandingWithRateLimiting(t *testing.T) {
 	domain := "links-rate-limit-" + acctest.RandString(10) + ".example.com"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridLinkBrandingDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridLinkBrandingDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridLinkBrandingConfigWithTimeouts(domain),

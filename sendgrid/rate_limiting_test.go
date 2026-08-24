@@ -48,8 +48,8 @@ output "api_key_ids" {
 		"sendgrid_api_key.rate_test_0.id, sendgrid_api_key.rate_test_1.id, sendgrid_api_key.rate_test_2.id, sendgrid_api_key.rate_test_3.id, sendgrid_api_key.rate_test_4.id")
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: config,
@@ -108,8 +108,8 @@ resource "sendgrid_template" "rate_test_2" {
 `, templates[0], templates[1], templates[2])
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: config,
@@ -172,8 +172,8 @@ resource "sendgrid_teammate" "rate_test_2" {
 `, emails[0], emails[1], emails[2])
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: config,

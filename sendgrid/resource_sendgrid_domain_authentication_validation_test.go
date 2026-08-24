@@ -15,9 +15,9 @@ func TestAccSendgridDomainAuthenticationValidationBasic(t *testing.T) {
 	domain := "test-" + acctest.RandString(10) + ".example.com"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridDomainAuthenticationValidationDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridDomainAuthenticationValidationDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridDomainAuthenticationValidationConfigBasic(domain),
