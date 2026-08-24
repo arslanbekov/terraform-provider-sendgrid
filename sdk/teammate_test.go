@@ -141,3 +141,91 @@ func TestClient_UpdateSSOUser_SendsIsAdminWhenTrue(t *testing.T) {
 		t.Error("is_admin must be sent when true")
 	}
 }
+
+func TestClient_ReadSubuserAccess_WalksPages(t *testing.T) {
+	var seen []string
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/teammates", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(teammateListBody))
+	})
+	mux.HandleFunc("/teammates/jdoe/subuser_access", func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.URL.RawQuery)
+		switch r.URL.Query().Get("after_subuser_id") {
+		case "":
+			_, _ = w.Write([]byte(`{"has_restricted_subuser_access":true,"subuser_access":[
+				{"id":111,"permission_type":"admin"},
+				{"id":222,"permission_type":"admin"}
+			]}`))
+		case "222":
+			_, _ = w.Write([]byte(`{"has_restricted_subuser_access":true,"subuser_access":[
+				{"id":333,"permission_type":"restricted","scopes":["mail.send"]}
+			]}`))
+		default:
+			_, _ = w.Write([]byte(`{"has_restricted_subuser_access":true,"subuser_access":[]}`))
+		}
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := sendgrid.NewClient("api-key", server.URL, "")
+	resp, reqErr := client.ReadSubuserAccess(context.Background(), "jdoe@example.com")
+	if reqErr.Err != nil {
+		t.Fatalf("ReadSubuserAccess() unexpected error: %v", reqErr.Err)
+	}
+
+	// A truncated read is what the next update would write back, so every page
+	// has to be collected.
+	if len(resp.SubuserAccess) != 3 {
+		t.Fatalf("collected %d entries across pages, want 3: %+v", len(resp.SubuserAccess), resp.SubuserAccess)
+	}
+	if resp.SubuserAccess[2].ID != 333 {
+		t.Errorf("last entry = %+v, want the id 333 from the second page", resp.SubuserAccess[2])
+	}
+	if !resp.HasRestrictedSubuserAccess {
+		t.Error("expected HasRestrictedSubuserAccess = true from the first page")
+	}
+
+	// An explicit limit on every request, and the cursor from the second one on.
+	if len(seen) != 3 {
+		t.Fatalf("made %d requests (%v), want 3: two pages plus the empty one that ends the walk", len(seen), seen)
+	}
+	if seen[0] != "limit=500" {
+		t.Errorf("first request query = %q, want limit=500 rather than the API's default of 100", seen[0])
+	}
+	if seen[1] != "limit=500&after_subuser_id=222" {
+		t.Errorf("second request query = %q, want the cursor at the highest id of the first page", seen[1])
+	}
+}
+
+func TestClient_ReadSubuserAccess_StopsWhenCursorIsIgnored(t *testing.T) {
+	requests := 0
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/teammates", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(teammateListBody))
+	})
+	// A server that ignores after_subuser_id serves the same page forever.
+	mux.HandleFunc("/teammates/jdoe/subuser_access", func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		_, _ = w.Write([]byte(`{"has_restricted_subuser_access":true,"subuser_access":[
+			{"id":111,"permission_type":"admin"}
+		]}`))
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := sendgrid.NewClient("api-key", server.URL, "")
+	resp, reqErr := client.ReadSubuserAccess(context.Background(), "jdoe@example.com")
+	if reqErr.Err != nil {
+		t.Fatalf("ReadSubuserAccess() unexpected error: %v", reqErr.Err)
+	}
+
+	// Stop instead of looping, and do not turn the repeated page into duplicates.
+	if requests != 2 {
+		t.Errorf("made %d requests, want 2: the walk must stop once a page fails to advance the cursor", requests)
+	}
+	if len(resp.SubuserAccess) != 1 {
+		t.Errorf("collected %d entries, want 1: a repeated page must not duplicate entries", len(resp.SubuserAccess))
+	}
+}

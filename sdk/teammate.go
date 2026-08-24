@@ -54,6 +54,19 @@ type SubuserAccessResponse struct {
 	SubuserAccess              []SubuserAccessRead `json:"subuser_access"`
 }
 
+// The subuser access listing is paginated: it returns at most `limit` entries
+// (100 when the parameter is omitted) and continues from `after_subuser_id`.
+// Every caller here needs the whole list, because a partial list is what the
+// next update would write back - the PATCH replaces subuser_access wholesale,
+// so entries missing from a truncated read would lose access.
+const (
+	subuserAccessPageLimit = 500
+
+	// Bounds the walk so a response that never advances the cursor cannot spin
+	// forever. 500 * 40 is far beyond any real teammate.
+	subuserAccessMaxPages = 40
+)
+
 // updateSSOTeammateRequest is the request body for PATCH /v3/sso/teammates/{username}.
 // We keep it separate from User to avoid polluting that struct with SSO-only fields.
 //
@@ -279,23 +292,65 @@ func (c *Client) ReadSubuserAccess(ctx context.Context, email string) (*SubuserA
 		return nil, requestErr
 	}
 
-	respBody, statusCode, err := c.Get(ctx, "GET", "/teammates/"+username+"/subuser_access")
-	if err != nil {
-		return nil, RequestError{
-			StatusCode: statusCode,
-			Err:        fmt.Errorf("failed reading subuser_access for %s: %w", email, err),
+	// Walk the pages by cursor rather than trusting a page to be short: the API
+	// may serve fewer entries than the requested limit, so "shorter than asked
+	// for" does not mean "last page". Stop on an empty page, or as soon as a page
+	// fails to advance past the cursor, which is what a server that ignores
+	// after_subuser_id looks like.
+	out := SubuserAccessResponse{}
+	after := 0
+
+	for page := 0; page < subuserAccessMaxPages; page++ {
+		endpoint := fmt.Sprintf("/teammates/%s/subuser_access?limit=%d", username, subuserAccessPageLimit)
+		if after > 0 {
+			endpoint += fmt.Sprintf("&after_subuser_id=%d", after)
 		}
+
+		respBody, statusCode, err := c.Get(ctx, "GET", endpoint)
+		if err != nil {
+			return nil, RequestError{
+				StatusCode: statusCode,
+				Err:        fmt.Errorf("failed reading subuser_access for %s: %w", email, err),
+			}
+		}
+
+		var body SubuserAccessResponse
+		if jsonErr := json.Unmarshal([]byte(respBody), &body); jsonErr != nil {
+			return nil, RequestError{
+				StatusCode: http.StatusInternalServerError,
+				Err:        fmt.Errorf("failed parsing subuser_access response: %w", jsonErr),
+			}
+		}
+
+		if page == 0 {
+			out.HasRestrictedSubuserAccess = body.HasRestrictedSubuserAccess
+		}
+
+		if len(body.SubuserAccess) == 0 {
+			break
+		}
+
+		maxID := after
+		for _, entry := range body.SubuserAccess {
+			// Skip anything at or before the cursor: a server that ignores
+			// after_subuser_id repeats the first page, and repeats must not
+			// become duplicate entries.
+			if entry.ID <= after {
+				continue
+			}
+			out.SubuserAccess = append(out.SubuserAccess, entry)
+			if entry.ID > maxID {
+				maxID = entry.ID
+			}
+		}
+
+		if maxID <= after {
+			break
+		}
+		after = maxID
 	}
 
-	var body SubuserAccessResponse
-	if jsonErr := json.Unmarshal([]byte(respBody), &body); jsonErr != nil {
-		return nil, RequestError{
-			StatusCode: http.StatusInternalServerError,
-			Err:        fmt.Errorf("failed parsing subuser_access response: %w", jsonErr),
-		}
-	}
-
-	return &body, RequestError{StatusCode: http.StatusOK, Err: nil}
+	return &out, RequestError{StatusCode: http.StatusOK, Err: nil}
 }
 
 func (c *Client) DeleteUser(ctx context.Context, email string) (bool, RequestError) {
