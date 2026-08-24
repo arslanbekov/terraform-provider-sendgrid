@@ -338,6 +338,13 @@ func resourceSendgridTeammate() *schema.Resource {
 		},
 
 		CustomizeDiff: func(ctx context.Context, d *schema.ResourceDiff, meta interface{}) error {
+			// subuser_access can still be unknown at plan time (an id that comes
+			// from another resource, a dynamic block). Nothing below can be decided
+			// on an unknown value, so leave the checks to the next plan.
+			if !d.NewValueKnown("subuser_access") {
+				return nil
+			}
+
 			hasSubuserAccess := false
 			if v, ok := d.GetOk("subuser_access"); ok {
 				hasSubuserAccess = v.(*schema.Set).Len() > 0
@@ -349,12 +356,23 @@ func resourceSendgridTeammate() *schema.Resource {
 				return fmt.Errorf("subuser_access is only supported for SSO teammates (is_sso = true)")
 			}
 
-			// scopes is frozen server-side once subuser_access is managed
-			// (Update() never resends it), so an explicit "scopes = []" would
-			// otherwise show a diff Update() can never actually apply.
-			if hasSubuserAccess {
-				return d.Clear("scopes")
+			// A teammate with restricted subuser access cannot carry root scopes at
+			// all: the API rejects them next to subuser_access and refuses them on
+			// their own ("If this property is set to true, you cannot specify
+			// individual scopes" - Edit an SSO Teammate). Changing scopes here is a
+			// request no apply can fulfil, so fail the plan rather than report a
+			// no-op. Unknown scopes are left alone: on create the placeholder below
+			// has not been resolved yet.
+			if hasSubuserAccess && d.NewValueKnown("scopes") && d.HasChange("scopes") {
+				old, want := d.GetChange("scopes")
+				return fmt.Errorf(
+					"scopes cannot be changed while subuser_access is set: SendGrid rejects root "+
+						"scopes for a teammate with restricted subuser access, so this change (%v -> %v) "+
+						"can never be applied. Remove scopes from the configuration to keep the teammate's "+
+						"current root scopes, or remove subuser_access to manage root scopes again",
+					old.(*schema.Set).List(), want.(*schema.Set).List())
 			}
+
 			return nil
 		},
 
@@ -394,7 +412,7 @@ func resourceSendgridTeammate() *schema.Resource {
 			},
 			"scopes": {
 				Type:        schema.TypeSet,
-				Description: "List of permission scopes for the teammate. Ignored if is_admin is true. Cannot include '2fa_exempt' or '2fa_required' as these are managed automatically by SendGrid. Also frozen once subuser_access is set - leave unset for a subuser-only teammate. See SendGrid API documentation for available scopes.",
+				Description: "List of permission scopes for the teammate. Ignored if is_admin is true. Cannot include '2fa_exempt' or '2fa_required' as these are managed automatically by SendGrid. This attribute is also computed: leaving it unset keeps whatever scopes the teammate currently has on the server instead of clearing them, and it must be left unset for a teammate with subuser_access, because SendGrid refuses root scopes for those teammates. See SendGrid API documentation for available scopes.",
 				Optional:    true,
 				Computed:    true,
 				Elem: &schema.Schema{
@@ -698,6 +716,11 @@ func resourceSendgridTeammateCreate(ctx context.Context, d *schema.ResourceData,
 	// SendGrid rejects an empty scopes list on create, even for a subuser-only
 	// teammate (root scopes aren't accepted in this call anyway). Placeholder
 	// scope only - never resent by the follow-up subuser_access call below.
+	//
+	// It also cannot be withdrawn later: once has_restricted_subuser_access is
+	// true the API refuses every root-scope write, so the teammate keeps this one
+	// read-only scope on its own profile. user.profile.read is the least
+	// privileged scope that satisfies the create call.
 	// The read-back check below must only ever report scopes the operator asked
 	// for, never the placeholder this function injects.
 	requestedScopes := scopes

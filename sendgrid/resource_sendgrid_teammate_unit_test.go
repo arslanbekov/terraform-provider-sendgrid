@@ -276,7 +276,7 @@ func TestTeammateSubuserAccessComputedNoDiff(t *testing.T) {
 // has subuser_access managed. Update() can never actually clear a leftover
 // scope, so CustomizeDiff must drop it rather than show a diff that never
 // converges.
-func TestTeammateScopesClearedWithSubuserAccess(t *testing.T) {
+func TestTeammateScopesRejectedWithSubuserAccess(t *testing.T) {
 	r := resourceSendgridTeammate()
 
 	prior := r.Data(nil)
@@ -290,24 +290,68 @@ func TestTeammateScopesClearedWithSubuserAccess(t *testing.T) {
 	})
 	state := prior.State()
 
+	subuserAccess := []interface{}{
+		map[string]interface{}{"id": 111, "permission_type": "admin"},
+	}
+
+	tests := []struct {
+		name    string
+		scopes  interface{}
+		wantErr bool
+	}{
+		// The API cannot revoke root scopes for this teammate, so an explicit
+		// empty list must fail the plan instead of applying as a no-op.
+		{name: "explicit empty scopes", scopes: []interface{}{}, wantErr: true},
+		{name: "different scopes", scopes: []interface{}{"mail.send"}, wantErr: true},
+		{name: "unchanged scopes", scopes: []interface{}{"user.profile.read"}, wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := terraform.NewResourceConfigRaw(map[string]interface{}{
+				"email":          "jdoe@example.com",
+				"is_sso":         true,
+				"is_admin":       false,
+				"scopes":         tt.scopes,
+				"subuser_access": subuserAccess,
+			})
+
+			_, err := r.Diff(context.Background(), state, config, nil)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("Diff() succeeded, want an error explaining that scopes cannot change alongside subuser_access")
+				}
+				if !strings.Contains(err.Error(), "scopes cannot be changed while subuser_access is set") {
+					t.Errorf("Diff() error = %v, want the subuser_access scope explanation", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Diff() unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestTeammateUnknownSubuserAccessDefersChecks(t *testing.T) {
+	r := resourceSendgridTeammate()
+
+	// The SDK's unknown-value sentinel; its own hcl2shim package is internal.
+	const unknown = "74D93920-ED26-11E3-AC10-0800200C9A66"
+
+	// subuser_access as a whole is unknown at plan time (for example
+	// "subuser_access = var.blocks" where the variable is not resolved yet).
+	// Neither check can decide anything on that, so the plan must not fail.
 	config := terraform.NewResourceConfigRaw(map[string]interface{}{
-		"email":    "jdoe@example.com",
-		"is_sso":   true,
-		"is_admin": false,
-		"scopes":   []interface{}{},
-		"subuser_access": []interface{}{
-			map[string]interface{}{"id": 111, "permission_type": "admin"},
-		},
+		"email":          "jdoe@example.com",
+		"is_sso":         true,
+		"is_admin":       false,
+		"scopes":         []interface{}{"mail.send"},
+		"subuser_access": unknown,
 	})
 
-	diff, err := r.Diff(context.Background(), state, config, nil)
-	if err != nil {
-		t.Fatalf("Diff() unexpected error: %v", err)
-	}
-	if diff != nil {
-		if _, ok := diff.Attributes["scopes.#"]; ok {
-			t.Errorf("expected scopes diff to be cleared, got: %#v", diff.Attributes)
-		}
+	if _, err := r.Diff(context.Background(), nil, config, nil); err != nil {
+		t.Fatalf("Diff() with unknown subuser_access returned %v, want the checks deferred", err)
 	}
 }
 
@@ -425,8 +469,8 @@ func TestTeammateCreate_SubuserOnly(t *testing.T) {
 	}
 
 	createScopes, _ := createBody["scopes"].([]interface{})
-	if len(createScopes) == 0 {
-		t.Errorf("create body scopes = %v, want a non-empty placeholder so SendGrid accepts the create", createBody["scopes"])
+	if len(createScopes) != 1 || createScopes[0] != "user.profile.read" {
+		t.Errorf("create body scopes = %v, want exactly [user.profile.read] so SendGrid accepts the create", createBody["scopes"])
 	}
 
 	if _, ok := patchBody["scopes"]; ok {
@@ -627,5 +671,36 @@ func TestSubuserAccessScopePolicy(t *testing.T) {
 				t.Errorf("written scopes = %v, want %v", written, want)
 			}
 		})
+	}
+}
+
+// scopes became Optional+Computed for every teammate, not only those with
+// subuser_access. This pins what that changed for everyone else: omitting scopes
+// now keeps the teammate's current scopes instead of planning them away.
+func TestTeammateOmittedScopesKeepServerValueWithoutSubuserAccess(t *testing.T) {
+	r := resourceSendgridTeammate()
+
+	prior := r.Data(nil)
+	prior.SetId("jdoe@example.com")
+	_ = prior.Set("email", "jdoe@example.com")
+	_ = prior.Set("is_sso", true)
+	_ = prior.Set("is_admin", false)
+	_ = prior.Set("scopes", []string{"mail.send", "templates.read"})
+	state := prior.State()
+
+	config := terraform.NewResourceConfigRaw(map[string]interface{}{
+		"email":    "jdoe@example.com",
+		"is_sso":   true,
+		"is_admin": false,
+	})
+
+	diff, err := r.Diff(context.Background(), state, config, nil)
+	if err != nil {
+		t.Fatalf("Diff() unexpected error: %v", err)
+	}
+	if diff != nil {
+		if attr, ok := diff.Attributes["scopes.#"]; ok {
+			t.Errorf("omitting scopes planned a change to them (%#v); Computed must keep the server value", attr)
+		}
 	}
 }

@@ -4,7 +4,7 @@ subcategory: ""
 description: |-
   Manages a SendGrid teammate. Teammates are team members who have access to your SendGrid account with specific permissions.
   Important Notes:
-  Admin teammates have full access and don't need scopesScopes '2fa_exempt' and '2fa_required' are set automatically by SendGridSelf-service credential scopes (user.password., user.multifactor_authentication., user.email.update, user.username.update) are granted automatically by SendGrid to password-login teammates and cannot be assigned manually`user.profile.update` is accepted on write and then omitted from the next read, so Terraform can never converge on it: it is rejected in configuration, stripped from writes, and filtered out of stateSome scopes require specific SendGrid plans (Pro+, Marketing plans, etc.)Use timeouts for better reliability with rate limiting
+  Admin teammates have full access and don't need scopesScopes '2fa_exempt' and '2fa_required' are set automatically by SendGridSelf-service credential scopes (user.password., user.multifactor_authentication., user.email.update, user.username.update) are granted automatically by SendGrid to password-login teammates and cannot be assigned manually'user.profile.update' is accepted on write and then omitted from the next read, so Terraform can never converge on it: it is rejected in configuration, stripped from writes, and filtered out of stateSome scopes require specific SendGrid plans (Pro+, Marketing plans, etc.)Use timeouts for better reliability with rate limiting
 ---
 
 # sendgrid_teammate (Resource)
@@ -15,7 +15,7 @@ Manages a SendGrid teammate. Teammates are team members who have access to your 
 - Admin teammates have full access and don't need scopes
 - Scopes '2fa_exempt' and '2fa_required' are set automatically by SendGrid
 - Self-service credential scopes (user.password.*, user.multifactor_authentication.*, user.email.update, user.username.update) are granted automatically by SendGrid to password-login teammates and cannot be assigned manually
-- `user.profile.update` is accepted on write and then omitted from the next read, so Terraform can never converge on it: it is rejected in configuration, stripped from writes, and filtered out of state
+- 'user.profile.update' is accepted on write and then omitted from the next read, so Terraform can never converge on it: it is rejected in configuration, stripped from writes, and filtered out of state
 - Some scopes require specific SendGrid plans (Pro+, Marketing plans, etc.)
 - Use timeouts for better reliability with rate limiting
 
@@ -141,7 +141,7 @@ resource "sendgrid_teammate" "developers" {
 
 - `first_name` (String) The first name of the teammate. Required for SSO users.
 - `last_name` (String) The last name of the teammate. Required for SSO users.
-- `scopes` (Set of String) List of permission scopes for the teammate. Ignored if is_admin is true. Cannot include '2fa_exempt' or '2fa_required' as these are managed automatically by SendGrid. See SendGrid API documentation for available scopes.
+- `scopes` (Set of String) List of permission scopes for the teammate. Ignored if is_admin is true. Cannot include '2fa_exempt' or '2fa_required' as these are managed automatically by SendGrid. This attribute is also computed: leaving it unset keeps whatever scopes the teammate currently has on the server instead of clearing them, and it must be left unset for a teammate with subuser_access, because SendGrid refuses root scopes for those teammates. See SendGrid API documentation for available scopes.
 - `subuser_access` (Block Set) Subuser permission grants for this SSO teammate. Only applies when `is_sso = true`. Setting at least one block sets `has_restricted_subuser_access = true` on the API. This attribute is also computed: when no block is managed it reflects the teammate's current server-side access without producing a diff, and removing all blocks falls back to that server value rather than clearing access (Terraform does not clobber access it does not manage). (see [below for nested schema](#nestedblock--subuser_access))
 - `username` (String) The username for the teammate. If not provided, the email will be used.
 
