@@ -698,6 +698,9 @@ func resourceSendgridTeammateCreate(ctx context.Context, d *schema.ResourceData,
 	// SendGrid rejects an empty scopes list on create, even for a subuser-only
 	// teammate (root scopes aren't accepted in this call anyway). Placeholder
 	// scope only - never resent by the follow-up subuser_access call below.
+	// The read-back check below must only ever report scopes the operator asked
+	// for, never the placeholder this function injects.
+	requestedScopes := scopes
 	if isSSO && !isAdmin && len(scopes) == 0 && len(subuserAccess) > 0 {
 		scopes = []string{"user.profile.read"}
 	}
@@ -748,7 +751,7 @@ func resourceSendgridTeammateCreate(ctx context.Context, d *schema.ResourceData,
 		return diags
 	}
 
-	return append(diags, warnUnpersistedScopes(d, scopes)...)
+	return append(diags, warnUnpersistedScopes(d, requestedScopes)...)
 }
 
 func resourceSendgridTeammateRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -894,6 +897,13 @@ func resourceSendgridTeammateUpdate(ctx context.Context, d *schema.ResourceData,
 		scopes = sanitizeScopes(scopes)
 	}
 
+	// The read-back check below reports what was actually sent; scopes are
+	// omitted whenever subuser_access is managed, so they cannot be dropped.
+	sentScopes := scopes
+	if isSSO && len(extractSubuserAccess(d)) > 0 {
+		sentScopes = nil
+	}
+
 	_, err := enhancedRetryOnScopeErrors(ctx, d, func() (interface{}, sendgrid.RequestError) {
 		if isSSO {
 			subuserAccess := extractSubuserAccess(d)
@@ -916,7 +926,7 @@ func resourceSendgridTeammateUpdate(ctx context.Context, d *schema.ResourceData,
 		return diags
 	}
 
-	return append(diags, warnUnpersistedScopes(d, scopes)...)
+	return append(diags, warnUnpersistedScopes(d, sentScopes)...)
 }
 
 func resourceSendgridTeammateDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
