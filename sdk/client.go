@@ -85,7 +85,17 @@ func (c *Client) Get(ctx context.Context, method rest.Method, endpoint string) (
 
 	req.Method = method
 
-	resp, err := sendgrid.API(req)
+	// rest.SendWithContext rather than sendgrid.API: the latter sends with
+	// context.Background(), so a caller's cancellation - a terraform run being
+	// interrupted, or a request that has to be given up on - never reached the
+	// HTTP request.
+	resp, err := rest.SendWithContext(ctx, req)
+	if resp == nil {
+		// A transport failure yields no response at all. Reading a status off it
+		// would panic the provider, and there is no status to report.
+		return "", 0, fmt.Errorf("api request failed: %w", err)
+	}
+
 	if err != nil || resp.StatusCode >= 400 {
 		return "", resp.StatusCode, fmt.Errorf("api response: HTTP %d: %s, err: %v", resp.StatusCode, resp.Body, err)
 	}
@@ -115,7 +125,10 @@ func (c *Client) Post(ctx context.Context, method rest.Method, endpoint string, 
 		return "", 0, fmt.Errorf("failed preparing request body: %w", err)
 	}
 
-	resp, err := sendgrid.API(req)
+	resp, err := rest.SendWithContext(ctx, req)
+	if resp == nil {
+		return "", 0, fmt.Errorf("api request failed: %w", err)
+	}
 
 	if resp.StatusCode >= 400 {
 		return "", resp.StatusCode, fmt.Errorf("api response: HTTP %d: %s", resp.StatusCode, resp.Body)
