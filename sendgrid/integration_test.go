@@ -17,8 +17,8 @@ func TestAccSendgridIntegrationEmailWorkflow(t *testing.T) {
 	unsubscribeName := "terraform-unsubscribe-" + acctest.RandString(10)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccSendgridIntegrationEmailWorkflowConfig(
@@ -53,8 +53,8 @@ func TestAccSendgridIntegrationRateLimitingStress(t *testing.T) {
 	prefix := "terraform-stress-" + acctest.RandString(8)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccSendgridIntegrationRateLimitingStressConfig(prefix),
@@ -83,8 +83,8 @@ func TestAccSendgridIntegrationDomainSetup(t *testing.T) {
 	linkDomain := "links-" + acctest.RandString(10) + ".example.com"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccSendgridIntegrationDomainSetupConfig(domain, linkDomain),

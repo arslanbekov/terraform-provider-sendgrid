@@ -17,9 +17,9 @@ func TestAccSendgridSubuserBasic(t *testing.T) {
 	password := "TerraformTest123!"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridSubuserDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridSubuserDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridSubuserConfigBasic(username, email, password),
@@ -40,9 +40,9 @@ func TestAccSendgridSubuserWithIps(t *testing.T) {
 	password := "TerraformTest123!"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridSubuserDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridSubuserDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridSubuserConfigWithIps(username, email, password),
@@ -63,9 +63,9 @@ func TestAccSendgridSubuserUpdate(t *testing.T) {
 	password := "TerraformTest123!"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridSubuserDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridSubuserDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridSubuserConfigBasic(username, email, password),
@@ -91,9 +91,9 @@ func TestAccSendgridSubuserWithRateLimiting(t *testing.T) {
 	password := "TerraformTest123!"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridSubuserDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridSubuserDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridSubuserConfigWithTimeouts(username, email, password),

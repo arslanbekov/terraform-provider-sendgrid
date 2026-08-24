@@ -18,9 +18,9 @@ func TestAccSendgridSSOIntegrationBasic(t *testing.T) {
 	signoutURL := "https://sso-" + acctest.RandString(10) + ".example.com/logout"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridSSOIntegrationDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridSSOIntegrationDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridSSOIntegrationConfigBasic(name, issuer, signonURL, signoutURL),
@@ -44,9 +44,9 @@ func TestAccSendgridSSOIntegrationEnabled(t *testing.T) {
 	signoutURL := "https://sso-enabled-" + acctest.RandString(10) + ".example.com/logout"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridSSOIntegrationDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridSSOIntegrationDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridSSOIntegrationConfigEnabled(name, issuer, signonURL, signoutURL),
@@ -68,9 +68,9 @@ func TestAccSendgridSSOIntegrationUpdate(t *testing.T) {
 	signoutURL := "https://sso-update-" + acctest.RandString(10) + ".example.com/logout"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridSSOIntegrationDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridSSOIntegrationDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridSSOIntegrationConfigBasic(name, issuer, signonURL, signoutURL),
@@ -97,9 +97,9 @@ func TestAccSendgridSSOIntegrationWithRateLimiting(t *testing.T) {
 	signoutURL := "https://sso-rate-" + acctest.RandString(10) + ".example.com/logout"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridSSOIntegrationDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridSSOIntegrationDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridSSOIntegrationConfigWithTimeouts(name, issuer, signonURL, signoutURL),

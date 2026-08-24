@@ -13,8 +13,8 @@ func TestAccDataSourceSendgridTeammate(t *testing.T) {
 	scopes := []string{"mail.send", "marketing.read"}
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccDataSourceSendgridTeammateConfig(email, scopes),
@@ -32,8 +32,8 @@ func TestAccDataSourceSendgridTemplate(t *testing.T) {
 	templateName := "terraform-template-data-" + acctest.RandString(10)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccDataSourceSendgridTemplateConfig(templateName),
@@ -52,8 +52,8 @@ func TestAccDataSourceSendgridUnsubscribeGroup(t *testing.T) {
 	description := "Test unsubscribe group for data source"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccDataSourceSendgridUnsubscribeGroupConfig(name, description),
@@ -72,8 +72,8 @@ func TestAccDataSourceSendgridTemplateVersion(t *testing.T) {
 	versionName := "terraform-version-data-" + acctest.RandString(10)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccDataSourceSendgridTemplateVersionConfig(templateName, versionName),

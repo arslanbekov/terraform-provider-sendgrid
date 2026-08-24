@@ -4,7 +4,7 @@ subcategory: ""
 description: |-
   Manages a SendGrid teammate. Teammates are team members who have access to your SendGrid account with specific permissions.
   Important Notes:
-  Admin teammates have full access and don't need scopesScopes '2fa_exempt' and '2fa_required' are set automatically by SendGridSelf-service credential scopes (user.password., user.multifactor_authentication., user.email.update, user.username.update) are granted automatically by SendGrid to password-login teammates and cannot be assigned manuallySome scopes require specific SendGrid plans (Pro+, Marketing plans, etc.)Use timeouts for better reliability with rate limiting
+  Admin teammates have full access and don't need scopesScopes '2fa_exempt' and '2fa_required' are set automatically by SendGridSelf-service credential scopes (user.password., user.multifactor_authentication., user.email.update, user.username.update) are granted automatically by SendGrid to password-login teammates and cannot be assigned manually`user.profile.update` is accepted on write and then omitted from the next read, so Terraform can never converge on it: it is rejected in configuration, stripped from writes, and filtered out of stateSome scopes require specific SendGrid plans (Pro+, Marketing plans, etc.)Use timeouts for better reliability with rate limiting
 ---
 
 # sendgrid_teammate (Resource)
@@ -15,6 +15,7 @@ Manages a SendGrid teammate. Teammates are team members who have access to your 
 - Admin teammates have full access and don't need scopes
 - Scopes '2fa_exempt' and '2fa_required' are set automatically by SendGrid
 - Self-service credential scopes (user.password.*, user.multifactor_authentication.*, user.email.update, user.username.update) are granted automatically by SendGrid to password-login teammates and cannot be assigned manually
+- `user.profile.update` is accepted on write and then omitted from the next read, so Terraform can never converge on it: it is rejected in configuration, stripped from writes, and filtered out of state
 - Some scopes require specific SendGrid plans (Pro+, Marketing plans, etc.)
 - Use timeouts for better reliability with rate limiting
 

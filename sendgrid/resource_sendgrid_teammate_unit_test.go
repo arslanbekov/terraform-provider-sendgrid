@@ -6,10 +6,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
 	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
@@ -487,5 +490,142 @@ func TestTeammateUpdate_SubuserAccess(t *testing.T) {
 	}
 	if _, ok := patchBody["subuser_access"]; !ok {
 		t.Errorf("update patch body = %v, want subuser_access", patchBody)
+	}
+}
+
+func TestUnpersistedScopes(t *testing.T) {
+	tests := []struct {
+		name       string
+		isAdmin    bool
+		userStatus string
+		persisted  []string
+		requested  []string
+		want       []string
+	}{
+		{
+			name:       "scope dropped by sendgrid",
+			userStatus: "active",
+			persisted:  []string{"mail.send"},
+			requested:  []string{"mail.send", "user.profile.update"},
+			want:       []string{"user.profile.update"},
+		},
+		{
+			name:       "every scope persisted",
+			userStatus: "active",
+			persisted:  []string{"mail.send", "templates.read"},
+			requested:  []string{"templates.read", "mail.send"},
+			want:       nil,
+		},
+		{
+			name:       "pending teammate reports no scopes yet",
+			userStatus: "pending",
+			requested:  []string{"mail.send"},
+			want:       nil,
+		},
+		{
+			name:       "admin teammate tracks no scopes",
+			isAdmin:    true,
+			userStatus: "active",
+			requested:  []string{"mail.send"},
+			want:       nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := resourceSendgridTeammate().TestResourceData()
+			d.SetId("jdoe@example.com")
+			if err := d.Set("is_admin", tt.isAdmin); err != nil {
+				t.Fatalf("set is_admin: %v", err)
+			}
+			if err := d.Set("user_status", tt.userStatus); err != nil {
+				t.Fatalf("set user_status: %v", err)
+			}
+			if err := d.Set("scopes", tt.persisted); err != nil {
+				t.Fatalf("set scopes: %v", err)
+			}
+
+			if got := unpersistedScopes(d, tt.requested); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("unpersistedScopes() = %v, want %v", got, tt.want)
+			}
+
+			diags := warnUnpersistedScopes(d, tt.requested)
+			if len(tt.want) == 0 {
+				if len(diags) != 0 {
+					t.Fatalf("warnUnpersistedScopes() = %v, want no diagnostics", diags)
+				}
+				return
+			}
+			if len(diags) != 1 || diags[0].Severity != diag.Warning {
+				t.Fatalf("warnUnpersistedScopes() = %v, want one warning", diags)
+			}
+			if !strings.Contains(diags[0].Detail, tt.want[0]) {
+				t.Errorf("warning detail %q does not name %q", diags[0].Detail, tt.want[0])
+			}
+		})
+	}
+}
+
+func TestSubuserAccessScopePolicy(t *testing.T) {
+	block := func(scopes []string) []interface{} {
+		return []interface{}{map[string]interface{}{
+			"id":              1,
+			"permission_type": "restricted",
+			"scopes":          scopes,
+		}}
+	}
+
+	tests := []struct {
+		name        string
+		scopes      []string
+		wantErr     bool
+		wantWritten []string
+	}{
+		{
+			name:        "automatic scope in a block is rejected and never written",
+			scopes:      []string{"mail.send", "user.profile.update"},
+			wantErr:     true,
+			wantWritten: []string{"mail.send"},
+		},
+		{
+			name:        "ordinary scopes pass and are written unchanged",
+			scopes:      []string{"mail.send", "templates.read"},
+			wantErr:     false,
+			wantWritten: []string{"mail.send", "templates.read"},
+		},
+		{
+			name:        "block without scopes is not validated",
+			scopes:      nil,
+			wantErr:     false,
+			wantWritten: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := resourceSendgridTeammate().TestResourceData()
+			if err := d.Set("subuser_access", block(tt.scopes)); err != nil {
+				t.Fatalf("set subuser_access: %v", err)
+			}
+
+			diags := validateSubuserAccessScopes(d)
+			if got := diags.HasError(); got != tt.wantErr {
+				t.Fatalf("validateSubuserAccessScopes() error = %v (%v), want %v", got, diags, tt.wantErr)
+			}
+
+			// The write payload must drop exactly what flattenSubuserAccess drops on
+			// read, or the block re-plans forever.
+			entries := extractSubuserAccess(d)
+			if len(entries) != 1 {
+				t.Fatalf("extractSubuserAccess() returned %d entries, want 1", len(entries))
+			}
+			written := append([]string(nil), entries[0].Scopes...)
+			sort.Strings(written)
+			want := append([]string(nil), tt.wantWritten...)
+			sort.Strings(want)
+			if !reflect.DeepEqual(written, want) {
+				t.Errorf("written scopes = %v, want %v", written, want)
+			}
+		})
 	}
 }

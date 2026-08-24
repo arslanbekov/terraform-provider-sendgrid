@@ -263,7 +263,6 @@ var validSendgridScopes = map[string]bool{
 	"user.profile.create":                       true,
 	"user.profile.delete":                       true,
 	"user.profile.read":                         true,
-	"user.profile.update":                       true,
 	"user.scheduled_sends.create":               true,
 	"user.scheduled_sends.delete":               true,
 	"user.scheduled_sends.read":                 true,
@@ -311,7 +310,11 @@ var sendgridAutomaticScopes = map[string]bool{
 	"user.multifactor_authentication.update": true,
 	"user.password.read":                     true,
 	"user.password.update":                   true,
-	"user.username.update":                   true,
+	// user.profile.update is not granted automatically: SendGrid accepts it on a
+	// write and echoes it back, then omits it from the next read, so state can
+	// never converge on it. Verified against the live teammates API.
+	"user.profile.update":  true,
+	"user.username.update": true,
 }
 
 func resourceSendgridTeammate() *schema.Resource {
@@ -322,6 +325,7 @@ func resourceSendgridTeammate() *schema.Resource {
 - Admin teammates have full access and don't need scopes
 - Scopes '2fa_exempt' and '2fa_required' are set automatically by SendGrid
 - Self-service credential scopes (user.password.*, user.multifactor_authentication.*, user.email.update, user.username.update) are granted automatically by SendGrid to password-login teammates and cannot be assigned manually
+- 'user.profile.update' is accepted on write and then omitted from the next read, so Terraform can never converge on it: it is rejected in configuration, stripped from writes, and filtered out of state
 - Some scopes require specific SendGrid plans (Pro+, Marketing plans, etc.)
 - Use timeouts for better reliability with rate limiting`,
 
@@ -480,7 +484,8 @@ func validateTeammateScopes(v interface{}, path cty.Path) diag.Diagnostics {
 			Severity: diag.Error,
 			Summary:  "Automatic scopes cannot be manually assigned",
 			Detail: fmt.Sprintf(
-				"the following scopes are set automatically by SendGrid and cannot be manually assigned: %s",
+				"the following scopes are set automatically by SendGrid and cannot be manually assigned "+
+					"(some are accepted on write and then silently discarded on read): %s",
 				strings.Join(automaticScopes, ", "),
 			),
 			AttributePath: path,
@@ -513,6 +518,54 @@ func sanitizeScopes(scopes []string) []string {
 	return sanitized
 }
 
+// unpersistedScopes returns the scopes that were sent to SendGrid but are missing
+// from the follow-up read. SendGrid accepts and even echoes some scopes in the
+// write response, then drops them silently, which surfaces as a scope diff that
+// every plan re-adds and no apply can converge.
+func unpersistedScopes(d *schema.ResourceData, requested []string) []string {
+	// Admins track no scopes, and a pending teammate reports none until the
+	// invitation is accepted, so neither says anything about what was dropped.
+	if d.Get("is_admin").(bool) || d.Get("user_status").(string) == "pending" {
+		return nil
+	}
+
+	persisted := make(map[string]bool)
+	for _, s := range d.Get("scopes").(*schema.Set).List() {
+		persisted[s.(string)] = true
+	}
+
+	var dropped []string
+	for _, s := range requested {
+		if !persisted[s] {
+			dropped = append(dropped, s)
+		}
+	}
+	sort.Strings(dropped)
+
+	return dropped
+}
+
+// warnUnpersistedScopes turns dropped scopes into one actionable warning, so the
+// next time SendGrid changes what it accepts the operator learns which scope to
+// remove instead of watching an identical diff replan forever.
+func warnUnpersistedScopes(d *schema.ResourceData, requested []string) diag.Diagnostics {
+	dropped := unpersistedScopes(d, requested)
+	if len(dropped) == 0 {
+		return nil
+	}
+
+	return diag.Diagnostics{{
+		Severity: diag.Warning,
+		Summary:  "SendGrid did not persist some teammate scopes",
+		Detail: fmt.Sprintf(
+			"SendGrid accepted the request for %s but did not return these scopes on the following read: %s. "+
+				"Terraform will plan to add them again on every run until they are removed from the configuration. "+
+				"SendGrid changes which scopes are assignable without notice; please report the scopes listed here so the provider can filter them.",
+			d.Id(), strings.Join(dropped, ", ")),
+		AttributePath: cty.GetAttrPath("scopes"),
+	}}
+}
+
 // suppressDiffForPendingUsers suppresses diff for fields that are not available for pending users
 func suppressDiffForPendingUsers(k, old, new string, d *schema.ResourceData) bool {
 	userStatus := d.Get("user_status").(string)
@@ -534,6 +587,26 @@ func suppressDiffForPendingUsers(k, old, new string, d *schema.ResourceData) boo
 	return false
 }
 
+// validateSubuserAccessScopes applies the scope rules to subuser_access blocks
+// that the top-level scopes attribute already gets. Without it an automatic or
+// invalid scope inside a block is written, dropped again on read, and re-planned
+// on every run with nothing telling the operator why.
+func validateSubuserAccessScopes(d *schema.ResourceData) diag.Diagnostics {
+	var diags diag.Diagnostics
+	path := cty.GetAttrPath("subuser_access")
+
+	for _, item := range d.Get("subuser_access").(*schema.Set).List() {
+		m := item.(map[string]interface{})
+		scopes, ok := m["scopes"].(*schema.Set)
+		if !ok || scopes.Len() == 0 {
+			continue
+		}
+		diags = append(diags, validateTeammateScopes(scopes, path)...)
+	}
+
+	return diags
+}
+
 // extractSubuserAccess converts the TypeSet value from the schema into the SDK slice.
 func extractSubuserAccess(d *schema.ResourceData) []sendgrid.SubuserAccess {
 	raw := d.Get("subuser_access").(*schema.Set).List()
@@ -552,6 +625,9 @@ func extractSubuserAccess(d *schema.ResourceData) []sendgrid.SubuserAccess {
 			for _, s := range scopesRaw.(*schema.Set).List() {
 				entry.Scopes = append(entry.Scopes, s.(string))
 			}
+			// flattenSubuserAccess sanitizes on read, so the write has to drop the
+			// same scopes or the block re-plans them forever.
+			entry.Scopes = sanitizeScopes(entry.Scopes)
 		}
 		out = append(out, entry)
 	}
@@ -601,6 +677,10 @@ func resourceSendgridTeammateCreate(ctx context.Context, d *schema.ResourceData,
 		if diags := validateTeammateScopes(scopesSet, path); diags.HasError() {
 			return diags
 		}
+	}
+
+	if diags := validateSubuserAccessScopes(d); diags.HasError() {
+		return diags
 	}
 
 	var scopes []string
@@ -663,7 +743,12 @@ func resourceSendgridTeammateCreate(ctx context.Context, d *schema.ResourceData,
 		}
 	}
 
-	return resourceSendgridTeammateRead(ctx, d, meta)
+	diags := resourceSendgridTeammateRead(ctx, d, meta)
+	if diags.HasError() {
+		return diags
+	}
+
+	return append(diags, warnUnpersistedScopes(d, scopes)...)
 }
 
 func resourceSendgridTeammateRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -795,6 +880,10 @@ func resourceSendgridTeammateUpdate(ctx context.Context, d *schema.ResourceData,
 		}
 	}
 
+	if diags := validateSubuserAccessScopes(d); diags.HasError() {
+		return diags
+	}
+
 	var scopes []string
 	if !isAdmin {
 		scopesList := scopesSet.List()
@@ -822,7 +911,12 @@ func resourceSendgridTeammateUpdate(ctx context.Context, d *schema.ResourceData,
 		return diag.FromErr(err)
 	}
 
-	return resourceSendgridTeammateRead(ctx, d, meta)
+	diags := resourceSendgridTeammateRead(ctx, d, meta)
+	if diags.HasError() {
+		return diags
+	}
+
+	return append(diags, warnUnpersistedScopes(d, scopes)...)
 }
 
 func resourceSendgridTeammateDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {

@@ -16,9 +16,9 @@ func TestAccSendgridParseWebhookBasic(t *testing.T) {
 	url := "https://example-" + acctest.RandString(10) + ".com/parse"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridParseWebhookDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridParseWebhookDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridParseWebhookConfigBasic(hostname, url),
@@ -44,9 +44,9 @@ func TestAccSendgridParseWebhookWithSendRaw(t *testing.T) {
 	url := "https://raw-" + acctest.RandString(10) + ".com/parse"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridParseWebhookDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridParseWebhookDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridParseWebhookConfigWithSendRaw(hostname, url),
@@ -68,9 +68,9 @@ func TestAccSendgridParseWebhookUpdate(t *testing.T) {
 	urlUpdated := "https://updated-" + acctest.RandString(10) + ".com/parse"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridParseWebhookDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridParseWebhookDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridParseWebhookConfigBasic(hostname, url),
@@ -95,9 +95,9 @@ func TestAccSendgridParseWebhookUpdateInPlace(t *testing.T) {
 	url := "https://inplace-" + acctest.RandString(10) + ".com/parse"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridParseWebhookDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridParseWebhookDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridParseWebhookConfigBasic(hostname, url),
@@ -126,9 +126,9 @@ func TestAccSendgridParseWebhookWithRateLimiting(t *testing.T) {
 	url := "https://rate-limit-" + acctest.RandString(10) + ".com/parse"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridParseWebhookDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridParseWebhookDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridParseWebhookConfigWithTimeouts(hostname, url),
@@ -147,9 +147,9 @@ func TestAccSendgridParseWebhookWithSecurityPolicy(t *testing.T) {
 	policyId := acctest.RandString(32)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridParseWebhookDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridParseWebhookDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridParseWebhookConfigWithWebhookSecurityPolicy(hostname, url, policyId),
