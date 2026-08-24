@@ -16,9 +16,9 @@ func TestAccSendgridTemplateBasic(t *testing.T) {
 	generation := "dynamic"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridTemplateDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridTemplateDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridTemplateConfigBasic(name, generation),

@@ -15,9 +15,9 @@ func TestAccSendgridEventWebhookBasic(t *testing.T) {
 	url := "https://example-" + acctest.RandString(10) + ".com/webhook"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridEventWebhookDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridEventWebhookDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridEventWebhookConfigBasic(url),
@@ -43,9 +43,9 @@ func TestAccSendgridEventWebhookWithEvents(t *testing.T) {
 	url := "https://events-" + acctest.RandString(10) + ".com/webhook"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridEventWebhookDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridEventWebhookDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridEventWebhookConfigWithEvents(url),
@@ -67,9 +67,9 @@ func TestAccSendgridEventWebhookUpdate(t *testing.T) {
 	urlUpdated := "https://updated-" + acctest.RandString(10) + ".com/webhook"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridEventWebhookDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridEventWebhookDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridEventWebhookConfigBasic(url),
@@ -93,9 +93,9 @@ func TestAccSendgridEventWebhookWithRateLimiting(t *testing.T) {
 	url := "https://rate-limit-" + acctest.RandString(10) + ".com/webhook"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridEventWebhookDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridEventWebhookDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridEventWebhookConfigWithTimeouts(url),
@@ -113,9 +113,9 @@ func TestAccSendgridEventWebhookWithFriendlyName(t *testing.T) {
 	friendlyName := "Test Webhook " + acctest.RandString(5)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridEventWebhookDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridEventWebhookDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridEventWebhookConfigWithFriendlyName(url, friendlyName),
@@ -136,9 +136,9 @@ func TestAccSendgridEventWebhookFriendlyNameUpdate(t *testing.T) {
 	friendlyNameUpdated := "Updated Name " + acctest.RandString(5)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridEventWebhookDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridEventWebhookDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridEventWebhookConfigWithFriendlyName(url, friendlyName),
@@ -163,9 +163,9 @@ func TestAccSendgridEventWebhookMultiple(t *testing.T) {
 	urlProd := "https://prod-" + acctest.RandString(10) + ".com/webhook"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridEventWebhookDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridEventWebhookDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridEventWebhookConfigMultiple(urlDev, urlProd),

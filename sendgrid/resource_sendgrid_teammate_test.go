@@ -16,9 +16,9 @@ func TestAccSendgridTeammate_basic(t *testing.T) {
 	email := "terraform-test-" + acctest.RandString(10) + "@example.com"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridTeammateDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridTeammateDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridTeammateConfigBasic(email),
@@ -37,9 +37,9 @@ func TestAccSendgridTeammate_admin(t *testing.T) {
 	email := "terraform-admin-" + acctest.RandString(10) + "@example.com"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridTeammateDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridTeammateDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridTeammateConfigAdmin(email),
@@ -57,9 +57,9 @@ func TestAccSendgridTeammate_withValidScopes(t *testing.T) {
 	email := "terraform-scopes-" + acctest.RandString(10) + "@example.com"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridTeammateDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridTeammateDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridTeammateConfigWithScopes(email),
@@ -78,8 +78,8 @@ func TestAccSendgridTeammate_invalidScopes(t *testing.T) {
 	email := "terraform-invalid-" + acctest.RandString(10) + "@example.com"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccCheckSendgridTeammateConfigInvalidScopes(email),
@@ -93,8 +93,8 @@ func TestAccSendgridTeammate_automaticScopes(t *testing.T) {
 	email := "terraform-auto-" + acctest.RandString(10) + "@example.com"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { testAccPreCheck(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccCheckSendgridTeammateConfigAutomaticScopes(email),
@@ -108,9 +108,9 @@ func TestAccSendgridTeammatePendingUser(t *testing.T) {
 	email := "terraform-teammate-pending-test-" + acctest.RandString(10) + "@example.com"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridTeammateDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridTeammateDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridTeammateConfigBasic(email),

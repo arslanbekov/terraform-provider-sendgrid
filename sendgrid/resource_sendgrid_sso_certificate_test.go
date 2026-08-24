@@ -16,9 +16,9 @@ func TestAccSendgridSSOCertificateBasic(t *testing.T) {
 	certificate := generateTestCertificate()
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridSSOCertificateDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridSSOCertificateDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridSSOCertificateConfigBasic(integrationId, certificate),
@@ -37,9 +37,9 @@ func TestAccSendgridSSOCertificateEnabled(t *testing.T) {
 	certificate := generateTestCertificate()
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridSSOCertificateDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridSSOCertificateDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridSSOCertificateConfigEnabled(integrationId, certificate),
@@ -58,9 +58,9 @@ func TestAccSendgridSSOCertificateUpdate(t *testing.T) {
 	certificate := generateTestCertificate()
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridSSOCertificateDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridSSOCertificateDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridSSOCertificateConfigBasic(integrationId, certificate),
@@ -85,9 +85,9 @@ func TestAccSendgridSSOCertificateWithRateLimiting(t *testing.T) {
 	certificate := generateTestCertificate()
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridSSOCertificateDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridSSOCertificateDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridSSOCertificateConfigWithTimeouts(integrationId, certificate),

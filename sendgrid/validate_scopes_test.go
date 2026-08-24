@@ -44,6 +44,12 @@ func TestValidateTeammateScopes(t *testing.T) {
 			errorContains: "set automatically by SendGrid",
 		},
 		{
+			name:          "automatic profile update scope",
+			scopes:        []interface{}{"mail.send", "user.profile.update"},
+			expectErrors:  true,
+			errorContains: "set automatically by SendGrid",
+		},
+		{
 			name:          "mix of valid and invalid",
 			scopes:        []interface{}{"mail.send", "invalid.scope", "templates.read"},
 			expectErrors:  true,
@@ -134,6 +140,7 @@ func TestSanitizeScopes(t *testing.T) {
 				"user.password.read",
 				"user.password.update",
 				"user.username.update",
+				"user.profile.update",
 				"templates.read",
 			},
 			expected: []string{"mail.send", "templates.read"},

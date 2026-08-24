@@ -16,9 +16,9 @@ func TestAccSendgridUnsubscribeGroupBasic(t *testing.T) {
 	description := "Test unsubscribe group created by Terraform"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridUnsubscribeGroupDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridUnsubscribeGroupDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridUnsubscribeGroupConfigBasic(name, description),
@@ -40,9 +40,9 @@ func TestAccSendgridUnsubscribeGroupUpdate(t *testing.T) {
 	descriptionUpdated := "Updated test unsubscribe group"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridUnsubscribeGroupDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridUnsubscribeGroupDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridUnsubscribeGroupConfigBasic(name, description),
@@ -69,9 +69,9 @@ func TestAccSendgridUnsubscribeGroupWithRateLimiting(t *testing.T) {
 	description := "Test unsubscribe group with rate limiting"
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:     func() { testAccPreCheck(t) },
-		Providers:    testAccProviders,
-		CheckDestroy: testAccCheckSendgridUnsubscribeGroupDestroy,
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: testAccProviderFactories,
+		CheckDestroy:      testAccCheckSendgridUnsubscribeGroupDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckSendgridUnsubscribeGroupConfigWithTimeouts(name, description),
