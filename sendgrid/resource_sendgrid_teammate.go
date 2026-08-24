@@ -361,16 +361,39 @@ func resourceSendgridTeammate() *schema.Resource {
 			// their own ("If this property is set to true, you cannot specify
 			// individual scopes" - Edit an SSO Teammate). Changing scopes here is a
 			// request no apply can fulfil, so fail the plan rather than report a
-			// no-op. Unknown scopes are left alone: on create the placeholder below
-			// has not been resolved yet.
-			if hasSubuserAccess && d.NewValueKnown("scopes") && d.HasChange("scopes") {
+			// no-op. Unknown scopes are left alone: an unset scopes attribute is
+			// computed, and on create the placeholder below has not been resolved yet.
+			if hasSubuserAccess && d.NewValueKnown("scopes") {
 				old, want := d.GetChange("scopes")
-				return fmt.Errorf(
-					"scopes cannot be changed while subuser_access is set: SendGrid rejects root "+
-						"scopes for a teammate with restricted subuser access, so this change (%v -> %v) "+
-						"can never be applied. Remove scopes from the configuration to keep the teammate's "+
-						"current root scopes, or remove subuser_access to manage root scopes again",
-					old.(*schema.Set).List(), want.(*schema.Set).List())
+				oldScopes, wantScopes := old.(*schema.Set), want.(*schema.Set)
+
+				// On create an explicit "scopes = []" carries no change to compare
+				// against, yet it still asks for something the create cannot honour:
+				// the placeholder below lands in state and every later plan then
+				// fails on the branch underneath. Reject it here instead. This keys on
+				// the configuration rather than the value, because an omitted scopes
+				// attribute is computed and reads as empty too - and that is the very
+				// path the placeholder exists for.
+				if d.Id() == "" && wantScopes.Len() == 0 && configDeclaresScopes(d) {
+					return fmt.Errorf(
+						"scopes must be left unset rather than empty for a teammate created with " +
+							"subuser_access: SendGrid rejects an empty scopes list on create, so the " +
+							"provider sends a single user.profile.read placeholder instead, which would " +
+							"then conflict with an empty scopes attribute on every later plan. Remove " +
+							"the scopes attribute from the configuration")
+				}
+
+				if d.HasChange("scopes") {
+					return fmt.Errorf(
+						"scopes cannot be managed while subuser_access is set: SendGrid refuses every "+
+							"root-scope write for a teammate with restricted subuser access, so this "+
+							"change (%v -> %v) can never be applied. Remove the scopes attribute from "+
+							"the configuration to keep the teammate's current root scopes. Dropping "+
+							"subuser_access does not restore root-scope management either: the provider "+
+							"never sends has_restricted_subuser_access = false, so clear it in SendGrid "+
+							"or recreate the teammate",
+						oldScopes.List(), wantScopes.List())
+				}
 			}
 
 			return nil
@@ -534,6 +557,23 @@ func sanitizeScopes(scopes []string) []string {
 		}
 	}
 	return sanitized
+}
+
+// configDeclaresScopes reports whether the configuration mentions scopes at all,
+// including an explicit empty list. The scopes attribute is computed, so neither
+// the diff value nor d.GetOk can tell an operator's empty list apart from an
+// omitted attribute. Terraform sends the raw configuration on a real plan; when
+// it is absent (a null value) this reports false, which leaves the create path
+// working rather than failing a plan the provider could have applied.
+func configDeclaresScopes(d *schema.ResourceDiff) bool {
+	raw := d.GetRawConfig()
+	if raw.IsNull() || !raw.IsKnown() {
+		return false
+	}
+
+	scopes := raw.GetAttr("scopes")
+
+	return !scopes.IsNull()
 }
 
 // unpersistedScopes returns the scopes that were sent to SendGrid but are missing

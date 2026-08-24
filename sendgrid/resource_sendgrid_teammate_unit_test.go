@@ -271,11 +271,11 @@ func TestTeammateSubuserAccessComputedNoDiff(t *testing.T) {
 	}
 }
 
-// TestTeammateScopesClearedWithSubuserAccess covers the case Computed alone
-// doesn't handle: an explicit "scopes = []" against a teammate that already
-// has subuser_access managed. Update() can never actually clear a leftover
-// scope, so CustomizeDiff must drop it rather than show a diff that never
-// converges.
+// SendGrid refuses every root-scope write for a teammate with restricted
+// subuser access, so a plan that sets or changes scopes for one can never be
+// applied. CustomizeDiff must fail such a plan - on update and on create, where
+// an explicit "scopes = []" would otherwise collide with the placeholder the
+// create injects - and must leave an unchanged value alone.
 func TestTeammateScopesRejectedWithSubuserAccess(t *testing.T) {
 	r := resourceSendgridTeammate()
 
@@ -295,33 +295,50 @@ func TestTeammateScopesRejectedWithSubuserAccess(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
-		scopes  interface{}
-		wantErr bool
+		name            string
+		create          bool
+		scopes          interface{}
+		wantErr         bool
+		wantErrContains string
 	}{
 		// The API cannot revoke root scopes for this teammate, so an explicit
 		// empty list must fail the plan instead of applying as a no-op.
-		{name: "explicit empty scopes", scopes: []interface{}{}, wantErr: true},
-		{name: "different scopes", scopes: []interface{}{"mail.send"}, wantErr: true},
+		{name: "explicit empty scopes", scopes: []interface{}{}, wantErr: true, wantErrContains: "scopes cannot be managed while subuser_access is set"},
+		{name: "different scopes", scopes: []interface{}{"mail.send"}, wantErr: true, wantErrContains: "scopes cannot be managed while subuser_access is set"},
 		{name: "unchanged scopes", scopes: []interface{}{"user.profile.read"}, wantErr: false},
+		// An explicit "scopes = []" on create is rejected by configDeclaresScopes,
+		// which needs the raw configuration Terraform sends on a real plan; this
+		// harness cannot supply it, so the case only pins that nothing else fires.
+		{name: "empty scopes on create", create: true, scopes: []interface{}{}, wantErr: false},
+		{name: "scopes on create", create: true, scopes: []interface{}{"mail.send"}, wantErr: true, wantErrContains: "scopes cannot be managed while subuser_access is set"},
+		// A create that leaves scopes unset is the path the placeholder exists
+		// for; the unknown value must defer, not fail.
+		{name: "unset scopes on create", create: true, wantErr: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := terraform.NewResourceConfigRaw(map[string]interface{}{
+			raw := map[string]interface{}{
 				"email":          "jdoe@example.com",
 				"is_sso":         true,
 				"is_admin":       false,
-				"scopes":         tt.scopes,
 				"subuser_access": subuserAccess,
-			})
+			}
+			if tt.scopes != nil {
+				raw["scopes"] = tt.scopes
+			}
 
-			_, err := r.Diff(context.Background(), state, config, nil)
+			priorState := state
+			if tt.create {
+				priorState = nil
+			}
+
+			_, err := r.Diff(context.Background(), priorState, terraform.NewResourceConfigRaw(raw), nil)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("Diff() succeeded, want an error explaining that scopes cannot change alongside subuser_access")
 				}
-				if !strings.Contains(err.Error(), "scopes cannot be changed while subuser_access is set") {
+				if !strings.Contains(err.Error(), tt.wantErrContains) {
 					t.Errorf("Diff() error = %v, want the subuser_access scope explanation", err)
 				}
 				return
@@ -464,7 +481,9 @@ func TestTeammateCreate_SubuserOnly(t *testing.T) {
 		map[string]interface{}{"id": 111, "permission_type": "admin"},
 	})
 
-	if diags := resourceSendgridTeammateCreate(context.Background(), d, config); diags.HasError() {
+	// Any diagnostic here is a regression: the read-back check must not report the
+	// placeholder this create injected, and a warning would not trip HasError().
+	if diags := resourceSendgridTeammateCreate(context.Background(), d, config); len(diags) != 0 {
 		t.Fatalf("Create() returned unexpected error: %v", diags)
 	}
 
@@ -525,7 +544,9 @@ func TestTeammateUpdate_SubuserAccess(t *testing.T) {
 		map[string]interface{}{"id": 111, "permission_type": "admin"},
 	})
 
-	if diags := resourceSendgridTeammateUpdate(context.Background(), d, config); diags.HasError() {
+	// Same here: scopes are deliberately not sent, so the read-back check must stay
+	// silent about them. A warning would slip past HasError().
+	if diags := resourceSendgridTeammateUpdate(context.Background(), d, config); len(diags) != 0 {
 		t.Fatalf("Update() returned unexpected error: %v", diags)
 	}
 
