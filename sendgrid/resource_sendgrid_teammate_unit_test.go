@@ -2,6 +2,8 @@ package sendgrid
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -247,6 +249,7 @@ func TestTeammateSubuserAccessComputedNoDiff(t *testing.T) {
 	_ = prior.Set("email", "jdoe@example.com")
 	_ = prior.Set("is_sso", true)
 	_ = prior.Set("is_admin", false)
+	_ = prior.Set("scopes", []string{"user.profile.read"})
 	_ = prior.Set("subuser_access", []map[string]interface{}{
 		{"id": 111, "permission_type": "restricted", "scopes": []string{"mail.send"}},
 	})
@@ -265,6 +268,107 @@ func TestTeammateSubuserAccessComputedNoDiff(t *testing.T) {
 	}
 	if diff != nil && !diff.Empty() {
 		t.Errorf("expected empty plan for unmanaged subuser_access (Computed), got diff: %#v", diff.Attributes)
+	}
+}
+
+// SendGrid refuses every root-scope write for a teammate with restricted
+// subuser access, so a plan that sets or changes scopes for one can never be
+// applied. CustomizeDiff must fail such a plan - on update and on create, where
+// an explicit "scopes = []" would otherwise collide with the placeholder the
+// create injects - and must leave an unchanged value alone.
+func TestTeammateScopesRejectedWithSubuserAccess(t *testing.T) {
+	r := resourceSendgridTeammate()
+
+	prior := r.Data(nil)
+	prior.SetId("jdoe@example.com")
+	_ = prior.Set("email", "jdoe@example.com")
+	_ = prior.Set("is_sso", true)
+	_ = prior.Set("is_admin", false)
+	_ = prior.Set("scopes", []string{"user.profile.read"})
+	_ = prior.Set("subuser_access", []map[string]interface{}{
+		{"id": 111, "permission_type": "admin"},
+	})
+	state := prior.State()
+
+	subuserAccess := []interface{}{
+		map[string]interface{}{"id": 111, "permission_type": "admin"},
+	}
+
+	tests := []struct {
+		name            string
+		create          bool
+		scopes          interface{}
+		wantErr         bool
+		wantErrContains string
+	}{
+		// The API cannot revoke root scopes for this teammate, so an explicit
+		// empty list must fail the plan instead of applying as a no-op.
+		{name: "explicit empty scopes", scopes: []interface{}{}, wantErr: true, wantErrContains: "scopes cannot be managed while subuser_access is set"},
+		{name: "different scopes", scopes: []interface{}{"mail.send"}, wantErr: true, wantErrContains: "scopes cannot be managed while subuser_access is set"},
+		{name: "unchanged scopes", scopes: []interface{}{"user.profile.read"}, wantErr: false},
+		// An explicit "scopes = []" on create is rejected by configDeclaresScopes,
+		// which needs the raw configuration Terraform sends on a real plan; this
+		// harness cannot supply it, so the case only pins that nothing else fires.
+		{name: "empty scopes on create", create: true, scopes: []interface{}{}, wantErr: false},
+		{name: "scopes on create", create: true, scopes: []interface{}{"mail.send"}, wantErr: true, wantErrContains: "scopes cannot be managed while subuser_access is set"},
+		// A create that leaves scopes unset is the path the placeholder exists
+		// for; the unknown value must defer, not fail.
+		{name: "unset scopes on create", create: true, wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw := map[string]interface{}{
+				"email":          "jdoe@example.com",
+				"is_sso":         true,
+				"is_admin":       false,
+				"subuser_access": subuserAccess,
+			}
+			if tt.scopes != nil {
+				raw["scopes"] = tt.scopes
+			}
+
+			priorState := state
+			if tt.create {
+				priorState = nil
+			}
+
+			_, err := r.Diff(context.Background(), priorState, terraform.NewResourceConfigRaw(raw), nil)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("Diff() succeeded, want an error explaining that scopes cannot change alongside subuser_access")
+				}
+				if !strings.Contains(err.Error(), tt.wantErrContains) {
+					t.Errorf("Diff() error = %v, want the subuser_access scope explanation", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Diff() unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestTeammateUnknownSubuserAccessDefersChecks(t *testing.T) {
+	r := resourceSendgridTeammate()
+
+	// The SDK's unknown-value sentinel; its own hcl2shim package is internal.
+	const unknown = "74D93920-ED26-11E3-AC10-0800200C9A66"
+
+	// subuser_access as a whole is unknown at plan time (for example
+	// "subuser_access = var.blocks" where the variable is not resolved yet).
+	// Neither check can decide anything on that, so the plan must not fail.
+	config := terraform.NewResourceConfigRaw(map[string]interface{}{
+		"email":          "jdoe@example.com",
+		"is_sso":         true,
+		"is_admin":       false,
+		"scopes":         []interface{}{"mail.send"},
+		"subuser_access": unknown,
+	})
+
+	if _, err := r.Diff(context.Background(), nil, config, nil); err != nil {
+		t.Fatalf("Diff() with unknown subuser_access returned %v, want the checks deferred", err)
 	}
 }
 
@@ -295,15 +399,16 @@ func TestTeammateResourceSchema(t *testing.T) {
 	tests := []struct {
 		field    string
 		required bool
+		computed bool
 	}{
-		{"email", true},
-		{"is_admin", true},
-		{"is_sso", true},
-		{"first_name", false},
-		{"last_name", false},
-		{"scopes", false},
-		{"username", false},
-		{"user_status", false},
+		{"email", true, false},
+		{"is_admin", true, false},
+		{"is_sso", true, false},
+		{"first_name", false, false},
+		{"last_name", false, false},
+		{"scopes", false, true},
+		{"username", false, false},
+		{"user_status", false, true},
 	}
 
 	for _, tt := range tests {
@@ -315,11 +420,141 @@ func TestTeammateResourceSchema(t *testing.T) {
 			if s.Required != tt.required {
 				t.Errorf("%s Required = %v, want %v", tt.field, s.Required, tt.required)
 			}
+			if s.Computed != tt.computed {
+				t.Errorf("%s Computed = %v, want %v", tt.field, s.Computed, tt.computed)
+			}
 		})
 	}
 
 	if r.Importer == nil {
 		t.Error("resource should have an Importer configured")
+	}
+}
+
+// TestTeammateCreate_SubuserOnly locks in the create-time fix: a placeholder
+// scope for the create call, never resent by the subuser_access follow-up.
+func TestTeammateCreate_SubuserOnly(t *testing.T) {
+	var createBody, patchBody map[string]interface{}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/sso/teammates", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &createBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"username":"jdoe@example.com","email":"jdoe@example.com","first_name":"John","last_name":"Doe","is_sso":true}`))
+	})
+	mux.HandleFunc("/sso/teammates/jdoe@example.com", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			http.NotFound(w, r)
+			return
+		}
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &patchBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"username":"jdoe@example.com","email":"jdoe@example.com"}`))
+	})
+	mux.HandleFunc("/teammates", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"result":[{"username":"jdoe@example.com","email":"jdoe@example.com"}]}`))
+	})
+	mux.HandleFunc("/teammates/jdoe@example.com", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"username":"jdoe@example.com","email":"jdoe@example.com","first_name":"John","last_name":"Doe","is_admin":false,"is_sso":true,"user_type":"teammate"}`))
+	})
+	mux.HandleFunc("/teammates/jdoe@example.com/subuser_access", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"has_restricted_subuser_access":true,"subuser_access":[{"id":111,"permission_type":"admin"}]}`))
+	})
+
+	server, config := setupTeammateMockServer(mux)
+	defer server.Close()
+
+	r := resourceSendgridTeammate()
+	d := r.TestResourceData()
+	_ = d.Set("email", "jdoe@example.com")
+	_ = d.Set("first_name", "John")
+	_ = d.Set("last_name", "Doe")
+	_ = d.Set("is_admin", false)
+	_ = d.Set("is_sso", true)
+	_ = d.Set("subuser_access", []interface{}{
+		map[string]interface{}{"id": 111, "permission_type": "admin"},
+	})
+
+	// Any diagnostic here is a regression: the read-back check must not report the
+	// placeholder this create injected, and a warning would not trip HasError().
+	if diags := resourceSendgridTeammateCreate(context.Background(), d, config); len(diags) != 0 {
+		t.Fatalf("Create() returned unexpected error: %v", diags)
+	}
+
+	createScopes, _ := createBody["scopes"].([]interface{})
+	if len(createScopes) != 1 || createScopes[0] != "user.profile.read" {
+		t.Errorf("create body scopes = %v, want exactly [user.profile.read] so SendGrid accepts the create", createBody["scopes"])
+	}
+
+	if _, ok := patchBody["scopes"]; ok {
+		t.Errorf("subuser_access patch body = %v, must not include scopes", patchBody)
+	}
+	if _, ok := patchBody["subuser_access"]; !ok {
+		t.Errorf("subuser_access patch body = %v, want subuser_access", patchBody)
+	}
+}
+
+// TestTeammateUpdate_SubuserAccess locks in that scopes is never resent once
+// subuser_access is managed, even if a stray value is still configured.
+func TestTeammateUpdate_SubuserAccess(t *testing.T) {
+	var patchBody map[string]interface{}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/teammates", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"result":[{"username":"jdoe@example.com","email":"jdoe@example.com"}]}`))
+	})
+	mux.HandleFunc("/sso/teammates/jdoe@example.com", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			http.NotFound(w, r)
+			return
+		}
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &patchBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"username":"jdoe@example.com","email":"jdoe@example.com"}`))
+	})
+	mux.HandleFunc("/teammates/jdoe@example.com", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"username":"jdoe@example.com","email":"jdoe@example.com","first_name":"John","last_name":"Doe","is_admin":false,"is_sso":true,"user_type":"active"}`))
+	})
+	mux.HandleFunc("/teammates/jdoe@example.com/subuser_access", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"has_restricted_subuser_access":true,"subuser_access":[{"id":111,"permission_type":"admin"}]}`))
+	})
+
+	server, config := setupTeammateMockServer(mux)
+	defer server.Close()
+
+	r := resourceSendgridTeammate()
+	d := r.TestResourceData()
+	d.SetId("jdoe@example.com")
+	_ = d.Set("email", "jdoe@example.com")
+	_ = d.Set("first_name", "John")
+	_ = d.Set("last_name", "Doe")
+	_ = d.Set("is_admin", false)
+	_ = d.Set("is_sso", true)
+	_ = d.Set("user_status", "active")
+	// Stray leftover scope - must not be resent alongside subuser_access.
+	_ = d.Set("scopes", []interface{}{"user.profile.read"})
+	_ = d.Set("subuser_access", []interface{}{
+		map[string]interface{}{"id": 111, "permission_type": "admin"},
+	})
+
+	// Same here: scopes are deliberately not sent, so the read-back check must stay
+	// silent about them. A warning would slip past HasError().
+	if diags := resourceSendgridTeammateUpdate(context.Background(), d, config); len(diags) != 0 {
+		t.Fatalf("Update() returned unexpected error: %v", diags)
+	}
+
+	if _, ok := patchBody["scopes"]; ok {
+		t.Errorf("update patch body = %v, must not include scopes alongside subuser_access", patchBody)
+	}
+	if _, ok := patchBody["subuser_access"]; !ok {
+		t.Errorf("update patch body = %v, want subuser_access", patchBody)
 	}
 }
 
@@ -457,5 +692,69 @@ func TestSubuserAccessScopePolicy(t *testing.T) {
 				t.Errorf("written scopes = %v, want %v", written, want)
 			}
 		})
+	}
+}
+
+// scopes became Optional+Computed for every teammate, not only those with
+// subuser_access. This pins what that changed for everyone else: omitting scopes
+// now keeps the teammate's current scopes instead of planning them away.
+func TestTeammateOmittedScopesKeepServerValueWithoutSubuserAccess(t *testing.T) {
+	r := resourceSendgridTeammate()
+
+	prior := r.Data(nil)
+	prior.SetId("jdoe@example.com")
+	_ = prior.Set("email", "jdoe@example.com")
+	_ = prior.Set("is_sso", true)
+	_ = prior.Set("is_admin", false)
+	_ = prior.Set("scopes", []string{"mail.send", "templates.read"})
+	state := prior.State()
+
+	config := terraform.NewResourceConfigRaw(map[string]interface{}{
+		"email":    "jdoe@example.com",
+		"is_sso":   true,
+		"is_admin": false,
+	})
+
+	diff, err := r.Diff(context.Background(), state, config, nil)
+	if err != nil {
+		t.Fatalf("Diff() unexpected error: %v", err)
+	}
+	if diff != nil {
+		if attr, ok := diff.Attributes["scopes.#"]; ok {
+			t.Errorf("omitting scopes planned a change to them (%#v); Computed must keep the server value", attr)
+		}
+	}
+}
+
+// The subuser_access endpoint returns every subuser for an administrator, with
+// has_restricted_subuser_access false. Recording those entries would make the
+// next update send has_restricted_subuser_access = true next to is_admin, a
+// combination the API rejects, so Read must key on the flag and not the list.
+func TestTeammateRead_UnrestrictedSubuserAccessIsNotRecorded(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/teammates", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"result":[{"username":"jdoe@example.com","email":"jdoe@example.com"}]}`))
+	})
+	mux.HandleFunc("/teammates/jdoe@example.com", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"username":"jdoe@example.com","email":"jdoe@example.com","is_admin":true,"is_sso":true,"user_type":"active"}`))
+	})
+	mux.HandleFunc("/teammates/jdoe@example.com/subuser_access", func(w http.ResponseWriter, r *http.Request) {
+		// Every subuser, as returned for an administrator.
+		_, _ = w.Write([]byte(`{"has_restricted_subuser_access":false,"subuser_access":[{"id":111,"permission_type":"admin"},{"id":222,"permission_type":"admin"}]}`))
+	})
+
+	server, config := setupTeammateMockServer(mux)
+	defer server.Close()
+
+	r := resourceSendgridTeammate()
+	d := r.TestResourceData()
+	d.SetId("jdoe@example.com")
+
+	if diags := resourceSendgridTeammateRead(context.Background(), d, config); diags.HasError() {
+		t.Fatalf("Read() returned unexpected error: %v", diags)
+	}
+
+	if got := d.Get("subuser_access").(*schema.Set).Len(); got != 0 {
+		t.Errorf("subuser_access recorded %d entries for an unrestricted teammate, want 0", got)
 	}
 }

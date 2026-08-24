@@ -337,12 +337,65 @@ func resourceSendgridTeammate() *schema.Resource {
 			StateContext: schema.ImportStatePassthroughContext,
 		},
 
-		// subuser_access only applies to SSO teammates; the create/update paths
-		// silently ignore it for non-SSO users, so reject it at plan time instead.
 		CustomizeDiff: func(ctx context.Context, d *schema.ResourceDiff, meta interface{}) error {
-			if v, ok := d.GetOk("subuser_access"); ok && v.(*schema.Set).Len() > 0 && !d.Get("is_sso").(bool) {
+			// subuser_access can still be unknown at plan time (an id that comes
+			// from another resource, a dynamic block). Nothing below can be decided
+			// on an unknown value, so leave the checks to the next plan.
+			if !d.NewValueKnown("subuser_access") {
+				return nil
+			}
+
+			hasSubuserAccess := false
+			if v, ok := d.GetOk("subuser_access"); ok {
+				hasSubuserAccess = v.(*schema.Set).Len() > 0
+			}
+
+			// subuser_access only applies to SSO teammates; the create/update
+			// paths silently ignore it for non-SSO users, so reject it here.
+			if hasSubuserAccess && !d.Get("is_sso").(bool) {
 				return fmt.Errorf("subuser_access is only supported for SSO teammates (is_sso = true)")
 			}
+
+			// A teammate with restricted subuser access cannot carry root scopes at
+			// all: the API rejects them next to subuser_access and refuses them on
+			// their own ("If this property is set to true, you cannot specify
+			// individual scopes" - Edit an SSO Teammate). Changing scopes here is a
+			// request no apply can fulfil, so fail the plan rather than report a
+			// no-op. Unknown scopes are left alone: an unset scopes attribute is
+			// computed, and on create the placeholder below has not been resolved yet.
+			if hasSubuserAccess && d.NewValueKnown("scopes") {
+				old, want := d.GetChange("scopes")
+				oldScopes, wantScopes := old.(*schema.Set), want.(*schema.Set)
+
+				// On create an explicit "scopes = []" carries no change to compare
+				// against, yet it still asks for something the create cannot honour:
+				// the placeholder below lands in state and every later plan then
+				// fails on the branch underneath. Reject it here instead. This keys on
+				// the configuration rather than the value, because an omitted scopes
+				// attribute is computed and reads as empty too - and that is the very
+				// path the placeholder exists for.
+				if d.Id() == "" && wantScopes.Len() == 0 && configDeclaresScopes(d) {
+					return fmt.Errorf(
+						"scopes must be left unset rather than empty for a teammate created with " +
+							"subuser_access: SendGrid rejects an empty scopes list on create, so the " +
+							"provider sends a single user.profile.read placeholder instead, which would " +
+							"then conflict with an empty scopes attribute on every later plan. Remove " +
+							"the scopes attribute from the configuration")
+				}
+
+				if d.HasChange("scopes") {
+					return fmt.Errorf(
+						"scopes cannot be managed while subuser_access is set: SendGrid refuses every "+
+							"root-scope write for a teammate with restricted subuser access, so this "+
+							"change (%v -> %v) can never be applied. Remove the scopes attribute from "+
+							"the configuration to keep the teammate's current root scopes. Dropping "+
+							"subuser_access does not restore root-scope management either: the provider "+
+							"never sends has_restricted_subuser_access = false, so clear it in SendGrid "+
+							"or recreate the teammate",
+						oldScopes.List(), wantScopes.List())
+				}
+			}
+
 			return nil
 		},
 
@@ -382,8 +435,9 @@ func resourceSendgridTeammate() *schema.Resource {
 			},
 			"scopes": {
 				Type:        schema.TypeSet,
-				Description: "List of permission scopes for the teammate. Ignored if is_admin is true. Cannot include '2fa_exempt' or '2fa_required' as these are managed automatically by SendGrid. See SendGrid API documentation for available scopes.",
+				Description: "List of permission scopes for the teammate. Ignored if is_admin is true. Cannot include '2fa_exempt' or '2fa_required' as these are managed automatically by SendGrid. This attribute is also computed: leaving it unset keeps whatever scopes the teammate currently has on the server instead of clearing them, and it must be left unset for a teammate with subuser_access, because SendGrid refuses root scopes for those teammates. See SendGrid API documentation for available scopes.",
 				Optional:    true,
+				Computed:    true,
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
@@ -503,6 +557,23 @@ func sanitizeScopes(scopes []string) []string {
 		}
 	}
 	return sanitized
+}
+
+// configDeclaresScopes reports whether the configuration mentions scopes at all,
+// including an explicit empty list. The scopes attribute is computed, so neither
+// the diff value nor d.GetOk can tell an operator's empty list apart from an
+// omitted attribute. Terraform sends the raw configuration on a real plan; when
+// it is absent (a null value) this reports false, which leaves the create path
+// working rather than failing a plan the provider could have applied.
+func configDeclaresScopes(d *schema.ResourceDiff) bool {
+	raw := d.GetRawConfig()
+	if raw.IsNull() || !raw.IsKnown() {
+		return false
+	}
+
+	scopes := raw.GetAttr("scopes")
+
+	return !scopes.IsNull()
 }
 
 // unpersistedScopes returns the scopes that were sent to SendGrid but are missing
@@ -680,6 +751,23 @@ func resourceSendgridTeammateCreate(ctx context.Context, d *schema.ResourceData,
 		scopes = sanitizeScopes(scopes)
 	}
 
+	subuserAccess := extractSubuserAccess(d)
+
+	// SendGrid rejects an empty scopes list on create, even for a subuser-only
+	// teammate (root scopes aren't accepted in this call anyway). Placeholder
+	// scope only - never resent by the follow-up subuser_access call below.
+	//
+	// It also cannot be withdrawn later: once has_restricted_subuser_access is
+	// true the API refuses every root-scope write, so the teammate keeps this one
+	// read-only scope on its own profile. user.profile.read is the least
+	// privileged scope that satisfies the create call.
+	// The read-back check below must only ever report scopes the operator asked
+	// for, never the placeholder this function injects.
+	requestedScopes := scopes
+	if isSSO && !isAdmin && len(scopes) == 0 && len(subuserAccess) > 0 {
+		scopes = []string{"user.profile.read"}
+	}
+
 	tflog.Debug(ctx, "Creating teammate", map[string]interface{}{
 		"first_name": firstName, "last_name": lastName,
 		"email": email, "is_admin": isAdmin, "scopes": scopes,
@@ -707,18 +795,17 @@ func resourceSendgridTeammateCreate(ctx context.Context, d *schema.ResourceData,
 	// The teammate ID is already set above, so if this PATCH fails the teammate
 	// exists in state without subuser access; the error makes that explicit and the
 	// next apply reconciles it.
-	if isSSO {
-		subuserAccess := extractSubuserAccess(d)
-		if len(subuserAccess) > 0 {
-			_, saErr := enhancedRetryOnScopeErrors(ctx, d, func() (interface{}, sendgrid.RequestError) {
-				return client.UpdateSSOUserWithSubuserAccess(ctx, firstName, lastName, email, scopes, isAdmin, subuserAccess)
-			})
-			if saErr != nil {
-				return diag.FromErr(fmt.Errorf(
-					"teammate %s was created but applying subuser_access failed; "+
-						"the teammate exists without subuser access and the next apply will reconcile it: %w",
-					email, saErr))
-			}
+	//
+	// scopes is omitted here: SendGrid rejects scopes alongside subuser_access.
+	if isSSO && len(subuserAccess) > 0 {
+		_, saErr := enhancedRetryOnScopeErrors(ctx, d, func() (interface{}, sendgrid.RequestError) {
+			return client.UpdateSSOUserWithSubuserAccess(ctx, firstName, lastName, email, nil, isAdmin, subuserAccess)
+		})
+		if saErr != nil {
+			return diag.FromErr(fmt.Errorf(
+				"teammate %s was created but applying subuser_access failed; "+
+					"the teammate exists without subuser access and the next apply will reconcile it: %w",
+				email, saErr))
 		}
 	}
 
@@ -727,7 +814,7 @@ func resourceSendgridTeammateCreate(ctx context.Context, d *schema.ResourceData,
 		return diags
 	}
 
-	return append(diags, warnUnpersistedScopes(d, scopes)...)
+	return append(diags, warnUnpersistedScopes(d, requestedScopes)...)
 }
 
 func resourceSendgridTeammateRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -802,7 +889,16 @@ func resourceSendgridTeammateRead(ctx context.Context, d *schema.ResourceData, m
 			}
 			return append(diags, diag.FromErr(saErr.Err)...)
 		}
-		if err := d.Set("subuser_access", flattenSubuserAccess(saResp.SubuserAccess)); err != nil {
+		// has_restricted_subuser_access is what makes the entry list meaningful: the
+		// endpoint returns every subuser for an administrator, so a list on its own
+		// says nothing about restricted access. Recording those entries would make
+		// the next update derive has_restricted_subuser_access = true from the list
+		// length and send it next to is_admin, which the API rejects.
+		entries := saResp.SubuserAccess
+		if !saResp.HasRestrictedSubuserAccess {
+			entries = nil
+		}
+		if err := d.Set("subuser_access", flattenSubuserAccess(entries)); err != nil {
 			return diag.FromErr(err)
 		}
 	}
@@ -873,10 +969,22 @@ func resourceSendgridTeammateUpdate(ctx context.Context, d *schema.ResourceData,
 		scopes = sanitizeScopes(scopes)
 	}
 
+	// The read-back check below reports what was actually sent; scopes are
+	// omitted whenever subuser_access is managed, so they cannot be dropped.
+	sentScopes := scopes
+	if isSSO && len(extractSubuserAccess(d)) > 0 {
+		sentScopes = nil
+	}
+
 	_, err := enhancedRetryOnScopeErrors(ctx, d, func() (interface{}, sendgrid.RequestError) {
 		if isSSO {
 			subuserAccess := extractSubuserAccess(d)
-			return client.UpdateSSOUserWithSubuserAccess(ctx, firstName, lastName, email, scopes, isAdmin, subuserAccess)
+			// scopes is omitted here too: SendGrid rejects scopes alongside subuser_access.
+			updateScopes := scopes
+			if len(subuserAccess) > 0 {
+				updateScopes = nil
+			}
+			return client.UpdateSSOUserWithSubuserAccess(ctx, firstName, lastName, email, updateScopes, isAdmin, subuserAccess)
 		}
 		return client.UpdateUser(ctx, email, scopes, isAdmin)
 	})
@@ -890,7 +998,7 @@ func resourceSendgridTeammateUpdate(ctx context.Context, d *schema.ResourceData,
 		return diags
 	}
 
-	return append(diags, warnUnpersistedScopes(d, scopes)...)
+	return append(diags, warnUnpersistedScopes(d, sentScopes)...)
 }
 
 func resourceSendgridTeammateDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
