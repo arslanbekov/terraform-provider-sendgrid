@@ -889,7 +889,16 @@ func resourceSendgridTeammateRead(ctx context.Context, d *schema.ResourceData, m
 			}
 			return append(diags, diag.FromErr(saErr.Err)...)
 		}
-		if err := d.Set("subuser_access", flattenSubuserAccess(saResp.SubuserAccess)); err != nil {
+		// has_restricted_subuser_access is what makes the entry list meaningful: the
+		// endpoint returns every subuser for an administrator, so a list on its own
+		// says nothing about restricted access. Recording those entries would make
+		// the next update derive has_restricted_subuser_access = true from the list
+		// length and send it next to is_admin, which the API rejects.
+		entries := saResp.SubuserAccess
+		if !saResp.HasRestrictedSubuserAccess {
+			entries = nil
+		}
+		if err := d.Set("subuser_access", flattenSubuserAccess(entries)); err != nil {
 			return diag.FromErr(err)
 		}
 	}

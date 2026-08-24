@@ -725,3 +725,36 @@ func TestTeammateOmittedScopesKeepServerValueWithoutSubuserAccess(t *testing.T) 
 		}
 	}
 }
+
+// The subuser_access endpoint returns every subuser for an administrator, with
+// has_restricted_subuser_access false. Recording those entries would make the
+// next update send has_restricted_subuser_access = true next to is_admin, a
+// combination the API rejects, so Read must key on the flag and not the list.
+func TestTeammateRead_UnrestrictedSubuserAccessIsNotRecorded(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/teammates", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"result":[{"username":"jdoe@example.com","email":"jdoe@example.com"}]}`))
+	})
+	mux.HandleFunc("/teammates/jdoe@example.com", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"username":"jdoe@example.com","email":"jdoe@example.com","is_admin":true,"is_sso":true,"user_type":"active"}`))
+	})
+	mux.HandleFunc("/teammates/jdoe@example.com/subuser_access", func(w http.ResponseWriter, r *http.Request) {
+		// Every subuser, as returned for an administrator.
+		_, _ = w.Write([]byte(`{"has_restricted_subuser_access":false,"subuser_access":[{"id":111,"permission_type":"admin"},{"id":222,"permission_type":"admin"}]}`))
+	})
+
+	server, config := setupTeammateMockServer(mux)
+	defer server.Close()
+
+	r := resourceSendgridTeammate()
+	d := r.TestResourceData()
+	d.SetId("jdoe@example.com")
+
+	if diags := resourceSendgridTeammateRead(context.Background(), d, config); diags.HasError() {
+		t.Fatalf("Read() returned unexpected error: %v", diags)
+	}
+
+	if got := d.Get("subuser_access").(*schema.Set).Len(); got != 0 {
+		t.Errorf("subuser_access recorded %d entries for an unrestricted teammate, want 0", got)
+	}
+}
