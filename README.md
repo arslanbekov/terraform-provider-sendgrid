@@ -166,10 +166,6 @@ For inquiries and collaboration opportunities, please contact: **[sendgrid@arsla
 
 This project is licensed under the [Mozilla Public License 2.0](LICENSE).
 
-## Support
-
-For support options, see our [Support Guide](.github/SUPPORT.md).
-
 ---
 
 **Disclaimer:** This is an unofficial provider maintained by the community. While it offers enhanced features and comprehensive testing, evaluate thoroughly for production use.
