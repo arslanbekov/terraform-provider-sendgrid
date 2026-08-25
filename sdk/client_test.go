@@ -3,6 +3,7 @@ package sendgrid
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -209,5 +210,62 @@ func TestClientPostHonorsContextCancellation(t *testing.T) {
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("error = %v, want it to wrap context.Canceled", err)
+	}
+}
+
+// truncatedBodyHost returns a server that declares more body than it sends and
+// then hangs up, so the client gets a response AND a read error - the shape
+// rest.BuildResponse produces when a context is cancelled mid-body.
+func truncatedBodyHost(t *testing.T, status string) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Errorf("hijack failed: %v", err)
+
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		_, _ = conn.Write([]byte("HTTP/1.1 " + status + "\r\nContent-Length: 100\r\n\r\npartial"))
+	}))
+}
+
+func TestClientGetWrapsBodyReadError(t *testing.T) {
+	server := truncatedBodyHost(t, "200 OK")
+	defer server.Close()
+
+	client := NewClient("api-key", server.URL, "")
+
+	_, status, err := client.Get(context.Background(), "GET", "/teammates")
+	if err == nil {
+		t.Fatal("Get() succeeded on a truncated body")
+	}
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Errorf("error = %v, want it to wrap the body read error", err)
+	}
+	if status != http.StatusOK {
+		t.Errorf("status = %d, want 200 - the response exists, only its body failed", status)
+	}
+}
+
+func TestClientPostWrapsBodyReadErrorOnHTTPError(t *testing.T) {
+	server := truncatedBodyHost(t, "500 Internal Server Error")
+	defer server.Close()
+
+	client := NewClient("api-key", server.URL, "")
+
+	// A >= 400 status must not swallow the read error: the status branch used to
+	// return first, dropping the cause of an interrupted read entirely.
+	_, status, err := client.Post(context.Background(), "PATCH", "/teammates/jdoe", nil)
+	if err == nil {
+		t.Fatal("Post() succeeded on a truncated body")
+	}
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Errorf("error = %v, want it to wrap the body read error", err)
+	}
+	if status != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", status)
 	}
 }

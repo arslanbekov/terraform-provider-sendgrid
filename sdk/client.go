@@ -96,7 +96,14 @@ func (c *Client) Get(ctx context.Context, method rest.Method, endpoint string) (
 		return "", 0, fmt.Errorf("api request failed: %w", err)
 	}
 
-	if err != nil || resp.StatusCode >= 400 {
+	// %w only where err is non-nil: BuildResponse returns a response together
+	// with a body-read error, so a cancellation mid-body must stay unwrappable
+	// by errors.Is. The >= 400 branch keeps %v - err is nil there.
+	if err != nil {
+		return "", resp.StatusCode, fmt.Errorf("api response: HTTP %d: %s, err: %w", resp.StatusCode, resp.Body, err)
+	}
+
+	if resp.StatusCode >= 400 {
 		return "", resp.StatusCode, fmt.Errorf("api response: HTTP %d: %s, err: %v", resp.StatusCode, resp.Body, err)
 	}
 
@@ -130,11 +137,14 @@ func (c *Client) Post(ctx context.Context, method rest.Method, endpoint string, 
 		return "", 0, fmt.Errorf("api request failed: %w", err)
 	}
 
+	// err first: a >= 400 response whose body failed to read would otherwise
+	// return the status alone and discard the cause, cancellation included.
+	if err != nil {
+		return "", resp.StatusCode, fmt.Errorf("api send post error: %w", err)
+	}
+
 	if resp.StatusCode >= 400 {
 		return "", resp.StatusCode, fmt.Errorf("api response: HTTP %d: %s", resp.StatusCode, resp.Body)
-	}
-	if err != nil {
-		return "", resp.StatusCode, fmt.Errorf("api send post error: %v", err)
 	}
 
 	return resp.Body, resp.StatusCode, nil
