@@ -1,6 +1,11 @@
 package sendgrid
 
 import (
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -120,3 +125,147 @@ func TestBodyToJSON(t *testing.T) {
 	}
 }
 
+// closedServerHost returns the address of a server that is no longer listening,
+// so the next request fails in the transport with no response at all.
+func closedServerHost(t *testing.T) string {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	host := server.URL
+	server.Close()
+
+	return host
+}
+
+func TestClientGetTransportFailureReturnsError(t *testing.T) {
+	client := NewClient("api-key", closedServerHost(t), "")
+
+	// A transport failure yields no response; reading a status off it panicked
+	// the provider, which takes the whole terraform run with it.
+	body, status, err := client.Get(context.Background(), "GET", "/teammates")
+	if err == nil {
+		t.Fatalf("Get() succeeded against a closed server: body=%q status=%d", body, status)
+	}
+	if status != 0 {
+		t.Errorf("status = %d, want 0 - there is no HTTP status to report", status)
+	}
+}
+
+func TestClientPostTransportFailureReturnsError(t *testing.T) {
+	client := NewClient("api-key", closedServerHost(t), "")
+
+	body, status, err := client.Post(context.Background(), "PATCH", "/teammates/jdoe", nil)
+	if err == nil {
+		t.Fatalf("Post() succeeded against a closed server: body=%q status=%d", body, status)
+	}
+	if status != 0 {
+		t.Errorf("status = %d, want 0 - there is no HTTP status to report", status)
+	}
+}
+
+func TestClientGetHonorsContextCancellation(t *testing.T) {
+	served := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		served++
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("api-key", server.URL, "")
+
+	// The happy path still works.
+	if _, _, err := client.Get(context.Background(), "GET", "/teammates"); err != nil {
+		t.Fatalf("Get() with a live context failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, _, err := client.Get(ctx, "GET", "/teammates")
+	if err == nil {
+		t.Fatal("Get() with a cancelled context succeeded; the context never reached the request")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("error = %v, want it to wrap context.Canceled", err)
+	}
+	if served != 1 {
+		t.Errorf("server served %d requests, want 1 - the cancelled call must not be sent", served)
+	}
+}
+
+func TestClientPostHonorsContextCancellation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("api-key", server.URL, "")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, _, err := client.Post(ctx, "PATCH", "/teammates/jdoe", map[string]string{"first_name": "John"})
+	if err == nil {
+		t.Fatal("Post() with a cancelled context succeeded; the context never reached the request")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("error = %v, want it to wrap context.Canceled", err)
+	}
+}
+
+// truncatedBodyHost returns a server that declares more body than it sends and
+// then hangs up, so the client gets a response AND a read error - the shape
+// rest.BuildResponse produces when a context is cancelled mid-body.
+func truncatedBodyHost(t *testing.T, status string) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Errorf("hijack failed: %v", err)
+
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		_, _ = conn.Write([]byte("HTTP/1.1 " + status + "\r\nContent-Length: 100\r\n\r\npartial"))
+	}))
+}
+
+func TestClientGetWrapsBodyReadError(t *testing.T) {
+	server := truncatedBodyHost(t, "200 OK")
+	defer server.Close()
+
+	client := NewClient("api-key", server.URL, "")
+
+	_, status, err := client.Get(context.Background(), "GET", "/teammates")
+	if err == nil {
+		t.Fatal("Get() succeeded on a truncated body")
+	}
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Errorf("error = %v, want it to wrap the body read error", err)
+	}
+	if status != http.StatusOK {
+		t.Errorf("status = %d, want 200 - the response exists, only its body failed", status)
+	}
+}
+
+func TestClientPostWrapsBodyReadErrorOnHTTPError(t *testing.T) {
+	server := truncatedBodyHost(t, "500 Internal Server Error")
+	defer server.Close()
+
+	client := NewClient("api-key", server.URL, "")
+
+	// A >= 400 status must not swallow the read error: the status branch used to
+	// return first, dropping the cause of an interrupted read entirely.
+	_, status, err := client.Post(context.Background(), "PATCH", "/teammates/jdoe", nil)
+	if err == nil {
+		t.Fatal("Post() succeeded on a truncated body")
+	}
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Errorf("error = %v, want it to wrap the body read error", err)
+	}
+	if status != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", status)
+	}
+}
