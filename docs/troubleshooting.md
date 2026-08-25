@@ -26,7 +26,10 @@ Error: Invalid or unassignable scopes provided. This can happen when:
 **Error Message:**
 
 ```
-Error: Operation was canceled. If you canceled the operation during execution, some resources may be in an intermediate state.
+Error: operation was canceled or timed out. This can happen when:
+1. You pressed Ctrl+C during execution
+2. The operation took longer than the configured timeout
+3. Network connectivity issues occurred
 ```
 
 **Solution:**
@@ -34,6 +37,10 @@ Error: Operation was canceled. If you canceled the operation during execution, s
 1. Check your SendGrid dashboard for partially created resources
 2. Run `terraform refresh` to update state
 3. Re-run the operation: `terraform apply`
+
+The provider passes Terraform's context to every API call, so Ctrl+C aborts an
+in-flight request instead of letting it finish. Step 1 matters: an interrupted
+create may or may not have reached SendGrid.
 
 ### 3. Rate Limiting Issues
 
@@ -59,6 +66,29 @@ Error: Rate limit exceeded (HTTP 429)
      }
    }
    ```
+
+### 4. Network and Connection Failures
+
+**Error Message:**
+
+```
+Error: request failed with HTTP 0: ... dial tcp: connect: connection refused
+```
+
+`HTTP 0` is not a SendGrid status code. It means the request never got a
+response at all -- DNS, TLS, a proxy, or connectivity failed before SendGrid
+answered. A genuine SendGrid rejection always carries its own status (401, 403,
+404, 429, 5xx), so `0` never overlaps with one.
+
+**Solution:**
+
+1. Check connectivity to `api.sendgrid.com` from wherever Terraform runs
+2. Check proxy and firewall settings, including `HTTPS_PROXY`
+3. Verify the `host` provider argument or `SENDGRID_HOST` if you set either --
+   a wrong host surfaces here rather than as an API error
+4. Check the SendGrid status page: https://status.sendgrid.com/
+5. Re-run the operation -- only HTTP 429 is retried automatically, transport
+   failures are not
 
 ## Valid SendGrid Scopes Reference
 
