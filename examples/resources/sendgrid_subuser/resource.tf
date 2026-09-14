@@ -14,3 +14,12 @@ resource "sendgrid_subuser" "staging_subuser" {
   ips      = ["192.168.1.101"]
   disabled = true
 }
+
+# EU data residency subuser (requires a dedicated EU IP; region cannot be changed after creation)
+resource "sendgrid_subuser" "eu_subuser" {
+  username = "app-emails-eu"
+  email    = "app-emails-eu@mycompany.com"
+  password = "SecurePassword789!"
+  region   = "eu"
+  ips      = ["192.168.1.102"]
+}

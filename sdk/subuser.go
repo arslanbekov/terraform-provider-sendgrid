@@ -26,6 +26,7 @@ type SubUser struct {
 	SignupSessionToken string           `json:"signup_session_token,omitempty"` //nolint:tagliatelle
 	AuthorizationToken string           `json:"authorization_token,omitempty"`  //nolint:tagliatelle
 	CreditAllocation   creditAllocation `json:"credit_allocation,omitempty"`    //nolint:tagliatelle
+	Region             string           `json:"region,omitempty"`
 }
 
 type UpdateSubUserPassword struct {
@@ -62,7 +63,7 @@ func parseSubUsers(respBody string) ([]SubUser, RequestError) {
 }
 
 // CreateSubuser creates a subuser and returns it.
-func (c *Client) CreateSubuser(ctx context.Context, username, email, password string, ips []string) (*SubUser, RequestError) {
+func (c *Client) CreateSubuser(ctx context.Context, username, email, password, region string, ips []string) (*SubUser, RequestError) {
 	if username == "" {
 		return nil, RequestError{StatusCode: http.StatusNotAcceptable, Err: ErrUsernameRequired}
 	}
@@ -85,6 +86,7 @@ func (c *Client) CreateSubuser(ctx context.Context, username, email, password st
 		Password:        password,
 		ConfirmPassword: password,
 		IPs:             ips,
+		Region:          region,
 	})
 	if err != nil {
 		return nil, RequestError{
@@ -109,7 +111,8 @@ func (c *Client) ReadSubUser(ctx context.Context, username string) ([]SubUser, R
 		return nil, RequestError{StatusCode: http.StatusNotAcceptable, Err: ErrUsernameRequired}
 	}
 
-	endpoint := "/subusers?username=" + url.QueryEscape(username)
+	// region is only returned when include_region=true is requested
+	endpoint := "/subusers?username=" + url.QueryEscape(username) + "&include_region=true"
 
 	respBody, statusCode, err := c.Get(ctx, "GET", endpoint)
 	if err != nil {
