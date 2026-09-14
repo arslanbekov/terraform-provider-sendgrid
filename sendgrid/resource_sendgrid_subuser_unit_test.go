@@ -173,14 +173,15 @@ func TestSubuserResourceSchema(t *testing.T) {
 		field    string
 		required bool
 		computed bool
+		forceNew bool
 	}{
-		{"username", true, false},
-		{"password", true, false},
-		{"email", true, false},
-		{"ips", true, false},
-		{"user_id", false, true},
-		{"disabled", false, true},
-		{"region", false, true},
+		{"username", true, false, false},
+		{"password", true, false, false},
+		{"email", true, false, false},
+		{"ips", true, false, false},
+		{"user_id", false, true, false},
+		{"disabled", false, true, false},
+		{"region", false, true, true},
 	}
 
 	for _, tt := range tests {
@@ -194,6 +195,9 @@ func TestSubuserResourceSchema(t *testing.T) {
 			}
 			if s.Computed != tt.computed {
 				t.Errorf("%s Computed = %v, want %v", tt.field, s.Computed, tt.computed)
+			}
+			if s.ForceNew != tt.forceNew {
+				t.Errorf("%s ForceNew = %v, want %v", tt.field, s.ForceNew, tt.forceNew)
 			}
 		})
 	}
