@@ -28,6 +28,7 @@ import (
 	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
 func resourceSendgridSubuser() *schema.Resource {
@@ -63,6 +64,14 @@ func resourceSendgridSubuser() *schema.Resource {
 				Required:    true,
 				Elem:        &schema.Schema{Type: schema.TypeString},
 			},
+			"region": {
+				Type:         schema.TypeString,
+				Description:  "The region to assign the subuser to, either 'global' or 'eu'. Defaults to 'global' on the SendGrid side. Cannot be changed after creation.",
+				Optional:     true,
+				Computed:     true,
+				ForceNew:     true,
+				ValidateFunc: validation.StringInSlice([]string{"global", "eu"}, false),
+			},
 			"user_id": {
 				Type:     schema.TypeInt,
 				Computed: true,
@@ -95,6 +104,7 @@ func resourceSendgridSubuserCreate(ctx context.Context, d *schema.ResourceData, 
 	username := d.Get("username").(string)
 	password := d.Get("password").(string)
 	email := d.Get("email").(string)
+	region := d.Get("region").(string)
 
 	ipsSet := d.Get("ips").(*schema.Set).List()
 	ips := make([]string, 0)
@@ -104,7 +114,7 @@ func resourceSendgridSubuserCreate(ctx context.Context, d *schema.ResourceData, 
 	}
 
 	_, err := sendgrid.RetryOnRateLimit(ctx, d, func() (interface{}, sendgrid.RequestError) {
-		return c.CreateSubuser(ctx, username, email, password, ips)
+		return c.CreateSubuser(ctx, username, email, password, region, ips)
 	})
 	if err != nil {
 		return diag.FromErr(err)
@@ -146,6 +156,8 @@ func resourceSendgridSubuserRead(ctx context.Context, d *schema.ResourceData, m 
 	d.Set("disabled", subUser[0].Disabled)
 	//nolint:errcheck
 	d.Set("email", subUser[0].Email)
+	//nolint:errcheck
+	d.Set("region", subUser[0].Region)
 
 	return nil
 }
