@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 )
 
 type DomainAuthenticationDNS struct {
@@ -219,6 +220,136 @@ func (c *Client) DeleteDomainAuthentication(ctx context.Context, id string) (boo
 			StatusCode: statusCode,
 			Err: fmt.Errorf("%w, status: %d, response: %s",
 				ErrFailedDeletingDomainAuthentication, statusCode, responseBody),
+		}
+	}
+
+	return true, RequestError{StatusCode: http.StatusOK, Err: nil}
+}
+
+// ReadDomainAuthentications lists the account's authenticated domains, optionally
+// filtered by domain name and with subuser-owned domains excluded.
+func (c *Client) ReadDomainAuthentications(
+	ctx context.Context,
+	domain string,
+	excludeSubusers bool,
+) ([]DomainAuthentication, RequestError) {
+	query := url.Values{}
+	if domain != "" {
+		query.Set("domain", domain)
+	}
+
+	if excludeSubusers {
+		query.Set("exclude_subusers", "true")
+	}
+
+	endpoint := "/whitelabel/domains"
+	if len(query) > 0 {
+		endpoint += "?" + query.Encode()
+	}
+
+	respBody, statusCode, err := c.Get(ctx, "GET", endpoint)
+	if err != nil {
+		return nil, RequestError{
+			StatusCode: statusCode,
+			Err:        err,
+		}
+	}
+
+	var body []DomainAuthentication
+	if err := json.Unmarshal([]byte(respBody), &body); err != nil {
+		return nil, RequestError{
+			StatusCode: http.StatusInternalServerError,
+			Err:        fmt.Errorf("failed parsing domain authentications: %w", err),
+		}
+	}
+
+	return body, RequestError{StatusCode: http.StatusOK, Err: nil}
+}
+
+// AssociateDomainAuthenticationSubuser assigns one of the parent account's
+// authenticated domains to a subuser.
+func (c *Client) AssociateDomainAuthenticationSubuser(
+	ctx context.Context,
+	domainID string,
+	username string,
+) (*DomainAuthentication, RequestError) {
+	if domainID == "" {
+		return nil, RequestError{
+			StatusCode: http.StatusInternalServerError,
+			Err:        ErrDomainAuthenticationIDRequired,
+		}
+	}
+
+	if username == "" {
+		return nil, RequestError{
+			StatusCode: http.StatusInternalServerError,
+			Err:        ErrUsernameRequired,
+		}
+	}
+
+	respBody, statusCode, err := c.Post(ctx, "POST", "/whitelabel/domains/"+domainID+"/subuser",
+		map[string]string{"username": username})
+	if err != nil {
+		return nil, RequestError{
+			StatusCode: statusCode,
+			Err:        fmt.Errorf("%w: %w", ErrFailedAssociatingDomainAuthenticationSubuser, err),
+		}
+	}
+
+	if statusCode >= http.StatusMultipleChoices {
+		return nil, RequestError{
+			StatusCode: statusCode,
+			Err: fmt.Errorf("%w, status: %d, response: %s",
+				ErrFailedAssociatingDomainAuthenticationSubuser, statusCode, respBody),
+		}
+	}
+
+	return ParseDomainAuthentication(respBody)
+}
+
+// ReadDomainAuthenticationSubuser returns the authenticated domain assigned to a subuser.
+func (c *Client) ReadDomainAuthenticationSubuser(ctx context.Context, username string) (*DomainAuthentication, RequestError) {
+	if username == "" {
+		return nil, RequestError{
+			StatusCode: http.StatusInternalServerError,
+			Err:        ErrUsernameRequired,
+		}
+	}
+
+	respBody, statusCode, err := c.Get(ctx, "GET", "/whitelabel/domains/subuser?username="+url.QueryEscape(username))
+	if err != nil {
+		return nil, RequestError{
+			StatusCode: statusCode,
+			Err:        err,
+		}
+	}
+
+	return ParseDomainAuthentication(respBody)
+}
+
+// DisassociateDomainAuthenticationSubuser removes one assigned authenticated domain from a subuser.
+// Scoped by domain ID so a drifted or multi-domain subuser never loses an association this call does not own.
+func (c *Client) DisassociateDomainAuthenticationSubuser(ctx context.Context, domainID, username string) (bool, RequestError) {
+	if domainID == "" {
+		return false, RequestError{
+			StatusCode: http.StatusInternalServerError,
+			Err:        ErrDomainAuthenticationIDRequired,
+		}
+	}
+
+	if username == "" {
+		return false, RequestError{
+			StatusCode: http.StatusInternalServerError,
+			Err:        ErrUsernameRequired,
+		}
+	}
+
+	_, statusCode, err := c.Get(ctx, "DELETE",
+		"/whitelabel/domains/"+domainID+"/subuser?username="+url.QueryEscape(username))
+	if err != nil && statusCode != http.StatusNotFound { // ignore not found
+		return false, RequestError{
+			StatusCode: statusCode,
+			Err:        fmt.Errorf("%w: %w", ErrFailedDisassociatingDomainAuthenticationSubuser, err),
 		}
 	}
 
