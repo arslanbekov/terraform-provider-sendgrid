@@ -109,6 +109,28 @@ func TestDataSourceDomainAuthentication_NotFound(t *testing.T) {
 	}
 }
 
+func TestDataSourceDomainAuthentication_APIError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/whitelabel/domains", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	server, config := setupMockServer(mux)
+	defer server.Close()
+
+	d := dataSendgridDomainAuthentication().TestResourceData()
+	_ = d.Set("domain", "app.example.com")
+
+	diags := dataSendgridDomainAuthenticationRead(context.Background(), d, config)
+
+	if !diags.HasError() {
+		t.Fatal("Read() expected error for 500, got nil")
+	}
+	if d.Id() != "" {
+		t.Errorf("Read() should not set ID on API error, got %q", d.Id())
+	}
+}
+
 func TestDataSourceDomainAuthentication_Schema(t *testing.T) {
 	s := dataSendgridDomainAuthentication().Schema
 
