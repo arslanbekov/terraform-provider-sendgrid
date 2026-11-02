@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 )
 
 type DomainAuthenticationDNS struct {
@@ -219,6 +220,146 @@ func (c *Client) DeleteDomainAuthentication(ctx context.Context, id string) (boo
 			StatusCode: statusCode,
 			Err: fmt.Errorf("%w, status: %d, response: %s",
 				ErrFailedDeletingDomainAuthentication, statusCode, responseBody),
+		}
+	}
+
+	return true, RequestError{StatusCode: http.StatusOK, Err: nil}
+}
+
+// domainAuthenticationsPageSize is the page size for GET /whitelabel/domains; the
+// endpoint paginates, so every page is read before a caller can trust a match.
+const domainAuthenticationsPageSize = 50
+
+// ReadDomainAuthentications lists the account's authenticated domains, optionally
+// filtered by domain name and with subuser-owned domains excluded.
+func (c *Client) ReadDomainAuthentications(
+	ctx context.Context,
+	domain string,
+	excludeSubusers bool,
+) ([]DomainAuthentication, RequestError) {
+	var all []DomainAuthentication
+
+	for offset := 0; ; offset += domainAuthenticationsPageSize {
+		query := url.Values{}
+		query.Set("limit", fmt.Sprint(domainAuthenticationsPageSize))
+		query.Set("offset", fmt.Sprint(offset))
+
+		if domain != "" {
+			query.Set("domain", domain)
+		}
+
+		if excludeSubusers {
+			query.Set("exclude_subusers", "true")
+		}
+
+		respBody, statusCode, err := c.Get(ctx, "GET", "/whitelabel/domains?"+query.Encode())
+		if err != nil {
+			return nil, RequestError{
+				StatusCode: statusCode,
+				Err:        err,
+			}
+		}
+
+		var page []DomainAuthentication
+		if err := json.Unmarshal([]byte(respBody), &page); err != nil {
+			return nil, RequestError{
+				StatusCode: http.StatusInternalServerError,
+				Err:        fmt.Errorf("failed parsing domain authentications: %w", err),
+			}
+		}
+
+		all = append(all, page...)
+
+		if len(page) < domainAuthenticationsPageSize {
+			return all, RequestError{StatusCode: http.StatusOK, Err: nil}
+		}
+	}
+}
+
+// AssociateDomainAuthenticationSubuser assigns one of the parent account's
+// authenticated domains to a subuser.
+func (c *Client) AssociateDomainAuthenticationSubuser(
+	ctx context.Context,
+	domainID string,
+	username string,
+) (*DomainAuthentication, RequestError) {
+	if domainID == "" {
+		return nil, RequestError{
+			StatusCode: http.StatusInternalServerError,
+			Err:        ErrDomainAuthenticationIDRequired,
+		}
+	}
+
+	if username == "" {
+		return nil, RequestError{
+			StatusCode: http.StatusInternalServerError,
+			Err:        ErrUsernameRequired,
+		}
+	}
+
+	respBody, statusCode, err := c.Post(ctx, "POST", "/whitelabel/domains/"+domainID+"/subuser",
+		map[string]string{"username": username})
+	if err != nil {
+		return nil, RequestError{
+			StatusCode: statusCode,
+			Err:        fmt.Errorf("%w: %w", ErrFailedAssociatingDomainAuthenticationSubuser, err),
+		}
+	}
+
+	if statusCode >= http.StatusMultipleChoices {
+		return nil, RequestError{
+			StatusCode: statusCode,
+			Err: fmt.Errorf("%w, status: %d, response: %s",
+				ErrFailedAssociatingDomainAuthenticationSubuser, statusCode, respBody),
+		}
+	}
+
+	return ParseDomainAuthentication(respBody)
+}
+
+// ReadDomainAuthenticationSubuser returns the authenticated domain assigned to a subuser.
+func (c *Client) ReadDomainAuthenticationSubuser(ctx context.Context, username string) (*DomainAuthentication, RequestError) {
+	if username == "" {
+		return nil, RequestError{
+			StatusCode: http.StatusInternalServerError,
+			Err:        ErrUsernameRequired,
+		}
+	}
+
+	respBody, statusCode, err := c.Get(ctx, "GET", "/whitelabel/domains/subuser?username="+url.QueryEscape(username))
+	if err != nil {
+		return nil, RequestError{
+			StatusCode: statusCode,
+			Err:        err,
+		}
+	}
+
+	return ParseDomainAuthentication(respBody)
+}
+
+// DisassociateDomainAuthenticationSubuser removes one assigned authenticated domain from a subuser.
+// Scoped by domain ID so a drifted or multi-domain subuser never loses an association this call does not own.
+func (c *Client) DisassociateDomainAuthenticationSubuser(ctx context.Context, domainID, username string) (bool, RequestError) {
+	if domainID == "" {
+		return false, RequestError{
+			StatusCode: http.StatusInternalServerError,
+			Err:        ErrDomainAuthenticationIDRequired,
+		}
+	}
+
+	if username == "" {
+		return false, RequestError{
+			StatusCode: http.StatusInternalServerError,
+			Err:        ErrUsernameRequired,
+		}
+	}
+
+	_, statusCode, err := c.Get(ctx, "DELETE",
+		"/whitelabel/domains/"+domainID+"/subuser?username="+url.QueryEscape(username))
+	if err != nil && statusCode != http.StatusNotFound { // ignore not found
+		return false, RequestError{
+			StatusCode: statusCode,
+			Err:        fmt.Errorf("%w: %w", ErrFailedDisassociatingDomainAuthenticationSubuser, err),
 		}
 	}
 

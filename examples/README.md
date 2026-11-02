@@ -13,6 +13,7 @@ This directory contains practical examples for all resources provided by the Sen
 ### Email Authentication & Branding
 
 - [sendgrid_domain_authentication](resources/sendgrid_domain_authentication/) - Domain authentication setup
+- [sendgrid_domain_authentication_subuser](resources/sendgrid_domain_authentication_subuser/) - Assign a parent's authenticated domain to a subuser
 - [sendgrid_link_branding](resources/sendgrid_link_branding/) - Link branding for click tracking
 
 ### Templates & Content

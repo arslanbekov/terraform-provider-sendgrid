@@ -100,6 +100,19 @@ resource "sendgrid_domain_authentication" "example" {
 }
 ```
 
+### sendgrid_domain_authentication_subuser
+
+Assigns an authenticated domain of the parent account to a subuser, so the subuser sends from the parent's validated domain without new DNS records. Both arguments force replacement.
+
+**Example:**
+
+```hcl
+resource "sendgrid_domain_authentication_subuser" "team" {
+  domain_id = data.sendgrid_domain_authentication.app.id
+  username  = sendgrid_subuser.team.username
+}
+```
+
 ### sendgrid_link_branding
 
 Manages link branding (formerly link whitelabel).
@@ -196,13 +209,14 @@ data "sendgrid_template" "existing" {
 
 ### sendgrid_domain_authentication
 
-Retrieves information about domain authentication.
+Retrieves an authenticated domain of the parent account by `domain`, and by `subdomain` when several share the same domain.
 
 **Example:**
 
 ```hcl
 data "sendgrid_domain_authentication" "existing" {
-  domain = "mail.example.com"
+  domain    = "mail.example.com"
+  subdomain = "em"
 }
 ```
 

@@ -87,6 +87,7 @@ tofu init && tofu apply
 - **Subusers**: `sendgrid_subuser` - Subuser account management
 - **Unsubscribe Groups**: `sendgrid_unsubscribe_group` - Manage unsubscribe groups
 - **Domain Validation**: `sendgrid_domain_authentication_validation` - Domain DNS validation
+- **Domain Subuser Assignment**: `sendgrid_domain_authentication_subuser` - Assign a parent's authenticated domain to a subuser
 
 See [full documentation](docs/RESOURCES.md) for details.
 
