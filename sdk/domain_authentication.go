@@ -226,6 +226,10 @@ func (c *Client) DeleteDomainAuthentication(ctx context.Context, id string) (boo
 	return true, RequestError{StatusCode: http.StatusOK, Err: nil}
 }
 
+// domainAuthenticationsPageSize is the page size for GET /whitelabel/domains; the
+// endpoint paginates, so every page is read before a caller can trust a match.
+const domainAuthenticationsPageSize = 50
+
 // ReadDomainAuthentications lists the account's authenticated domains, optionally
 // filtered by domain name and with subuser-owned domains excluded.
 func (c *Client) ReadDomainAuthentications(
@@ -233,37 +237,43 @@ func (c *Client) ReadDomainAuthentications(
 	domain string,
 	excludeSubusers bool,
 ) ([]DomainAuthentication, RequestError) {
-	query := url.Values{}
-	if domain != "" {
-		query.Set("domain", domain)
-	}
+	var all []DomainAuthentication
 
-	if excludeSubusers {
-		query.Set("exclude_subusers", "true")
-	}
+	for offset := 0; ; offset += domainAuthenticationsPageSize {
+		query := url.Values{}
+		query.Set("limit", fmt.Sprint(domainAuthenticationsPageSize))
+		query.Set("offset", fmt.Sprint(offset))
 
-	endpoint := "/whitelabel/domains"
-	if len(query) > 0 {
-		endpoint += "?" + query.Encode()
-	}
+		if domain != "" {
+			query.Set("domain", domain)
+		}
 
-	respBody, statusCode, err := c.Get(ctx, "GET", endpoint)
-	if err != nil {
-		return nil, RequestError{
-			StatusCode: statusCode,
-			Err:        err,
+		if excludeSubusers {
+			query.Set("exclude_subusers", "true")
+		}
+
+		respBody, statusCode, err := c.Get(ctx, "GET", "/whitelabel/domains?"+query.Encode())
+		if err != nil {
+			return nil, RequestError{
+				StatusCode: statusCode,
+				Err:        err,
+			}
+		}
+
+		var page []DomainAuthentication
+		if err := json.Unmarshal([]byte(respBody), &page); err != nil {
+			return nil, RequestError{
+				StatusCode: http.StatusInternalServerError,
+				Err:        fmt.Errorf("failed parsing domain authentications: %w", err),
+			}
+		}
+
+		all = append(all, page...)
+
+		if len(page) < domainAuthenticationsPageSize {
+			return all, RequestError{StatusCode: http.StatusOK, Err: nil}
 		}
 	}
-
-	var body []DomainAuthentication
-	if err := json.Unmarshal([]byte(respBody), &body); err != nil {
-		return nil, RequestError{
-			StatusCode: http.StatusInternalServerError,
-			Err:        fmt.Errorf("failed parsing domain authentications: %w", err),
-		}
-	}
-
-	return body, RequestError{StatusCode: http.StatusOK, Err: nil}
 }
 
 // AssociateDomainAuthenticationSubuser assigns one of the parent account's

@@ -2,8 +2,10 @@ package sendgrid_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	sendgrid "github.com/arslanbekov/terraform-provider-sendgrid/sdk"
@@ -180,7 +182,7 @@ func TestClient_ReadDomainAuthentications(t *testing.T) {
 	defer teardown()
 	mux.HandleFunc("/whitelabel/domains", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		if q.Get("domain") != "example.com" || q.Get("exclude_subusers") != "true" {
+		if q.Get("domain") != "example.com" || q.Get("exclude_subusers") != "true" || q.Get("limit") != "50" || q.Get("offset") != "0" {
 			t.Errorf("unexpected query: %s", r.URL.RawQuery)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -203,8 +205,9 @@ func TestClient_ReadDomainAuthentications_NoQuery(t *testing.T) {
 	teardown := setup()
 	defer teardown()
 	mux.HandleFunc("/whitelabel/domains", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.RawQuery != "" {
-			t.Errorf("expected no query, got %s", r.URL.RawQuery)
+		q := r.URL.Query()
+		if q.Has("domain") || q.Has("exclude_subusers") {
+			t.Errorf("expected no filter, got %s", r.URL.RawQuery)
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`[]`))
@@ -215,5 +218,39 @@ func TestClient_ReadDomainAuthentications_NoQuery(t *testing.T) {
 
 	if reqErr.Err != nil || len(auths) != 0 {
 		t.Fatalf("unexpected result: %+v %v", auths, reqErr.Err)
+	}
+}
+
+func TestClient_ReadDomainAuthentications_Paginates(t *testing.T) {
+	teardown := setup()
+	defer teardown()
+	var offsets []string
+	mux.HandleFunc("/whitelabel/domains", func(w http.ResponseWriter, r *http.Request) {
+		offset := r.URL.Query().Get("offset")
+		offsets = append(offsets, offset)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if offset == "0" {
+			page := make([]string, 0, 50)
+			for i := 1; i <= 50; i++ {
+				page = append(page, fmt.Sprintf(`{"id":%d,"domain":"d%d.example.com"}`, i, i))
+			}
+			_, _ = w.Write([]byte("[" + strings.Join(page, ",") + "]"))
+			return
+		}
+		_, _ = w.Write([]byte(`[{"id":51,"domain":"d51.example.com"}]`))
+	})
+	client := sendgrid.NewClient("api-key", server.URL, "")
+
+	auths, reqErr := client.ReadDomainAuthentications(context.Background(), "", true)
+
+	if reqErr.Err != nil {
+		t.Fatalf("unexpected error: %v", reqErr.Err)
+	}
+	if len(auths) != 51 || auths[50].ID != 51 {
+		t.Errorf("expected 51 domains across two pages, got %d", len(auths))
+	}
+	if strings.Join(offsets, ",") != "0,50" {
+		t.Errorf("expected offsets 0,50, got %v", offsets)
 	}
 }

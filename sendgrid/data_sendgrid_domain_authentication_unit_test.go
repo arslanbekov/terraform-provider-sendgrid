@@ -58,8 +58,8 @@ func TestDataSourceDomainAuthentication_ByDomainAndSubdomain(t *testing.T) {
 	if d.Id() != "1" {
 		t.Errorf("Read() ID = %q, want %q", d.Id(), "1")
 	}
-	if d.Get("valid") != true || d.Get("dns.#") != 1 {
-		t.Errorf("Read() valid=%v dns.#=%v", d.Get("valid"), d.Get("dns.#"))
+	if d.Get("valid") != true || d.Get("dns.#") != 1 || d.Get("automatic_security") != true {
+		t.Errorf("Read() valid=%v dns.#=%v automatic_security=%v", d.Get("valid"), d.Get("dns.#"), d.Get("automatic_security"))
 	}
 }
 

@@ -69,6 +69,10 @@ func dataSendgridDomainAuthenticationRead(ctx context.Context, d *schema.Resourc
 	case 1:
 		d.SetId(fmt.Sprint(matches[0].ID))
 
+		// The resource reader leaves automatic_security to the configuration; a data source has none.
+		//nolint:errcheck
+		d.Set("automatic_security", matches[0].AutomaticSecurity)
+
 		return resourceSendgridDomainAuthenticationRead(ctx, d, m)
 	default:
 		return diag.Errorf("found %d authenticated domains with domain '%s', set 'subdomain' to select one",
